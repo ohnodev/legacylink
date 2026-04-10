@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "legacylink",
+  "version": "${version}",
+  "name": "LegacyLink",
+  "description": "Lightweight 26.2-to-26.1 protocol translation layer for Fabric servers.",
+  "authors": ["ohnodev"],
+  "license": "MIT",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "dev.ohno.legacylink.LegacyLinkMod"
+    ]
+  },
+  "mixins": [
+    "legacylink.mixins.json"
+  ],
+  "accessWidener": "legacylink.accesswidener",
+  "depends": {
+    "fabricloader": ">=0.19.1",
+    "minecraft": ">=26.2-alpha.1"
+  }
+}
