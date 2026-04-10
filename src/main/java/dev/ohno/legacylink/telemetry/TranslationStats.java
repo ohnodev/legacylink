@@ -9,8 +9,11 @@ public final class TranslationStats {
     private static final AtomicLong registriesFiltered = new AtomicLong();
     private static final AtomicLong registryEntriesFiltered = new AtomicLong();
     private static final AtomicLong blockRemaps = new AtomicLong();
+    private static final AtomicLong sectionBlockRemaps = new AtomicLong();
+    private static final AtomicLong chunkBlockStateRemaps = new AtomicLong();
+    private static final AtomicLong chunkBlockEntitiesFiltered = new AtomicLong();
     private static final AtomicLong entityRemaps = new AtomicLong();
-    private static final AtomicLong advancementsDropped = new AtomicLong();
+    private static final AtomicLong advancementsRemapped = new AtomicLong();
     private static final AtomicLong errors = new AtomicLong();
 
     public static void recordRegistryFiltered(String registryId) {
@@ -25,12 +28,21 @@ public final class TranslationStats {
         blockRemaps.incrementAndGet();
     }
 
+    public static void recordSectionBlocksRemap(int count) {
+        sectionBlockRemaps.addAndGet(count);
+    }
+
+    public static void recordChunkRemap(int blockStates, int blockEntities) {
+        chunkBlockStateRemaps.addAndGet(blockStates);
+        chunkBlockEntitiesFiltered.addAndGet(blockEntities);
+    }
+
     public static void recordEntityRemap() {
         entityRemaps.incrementAndGet();
     }
 
-    public static void recordAdvancementsDropped() {
-        advancementsDropped.incrementAndGet();
+    public static void recordAdvancementsRemapped(int count) {
+        advancementsRemapped.addAndGet(count);
     }
 
     public static void recordError() {
@@ -40,12 +52,16 @@ public final class TranslationStats {
     public static void dump() {
         LegacyLinkMod.LOGGER.info(
                 "[LegacyLink] Session stats — registries_filtered={}, registry_entries_filtered={}, " +
-                        "block_remaps={}, entity_remaps={}, advancements_dropped={}, errors={}",
+                        "block_remaps={}, section_block_remaps={}, chunk_blockstate_remaps={}, " +
+                        "chunk_block_entities_filtered={}, entity_remaps={}, advancements_remapped={}, errors={}",
                 registriesFiltered.get(),
                 registryEntriesFiltered.get(),
                 blockRemaps.get(),
+                sectionBlockRemaps.get(),
+                chunkBlockStateRemaps.get(),
+                chunkBlockEntitiesFiltered.get(),
                 entityRemaps.get(),
-                advancementsDropped.get(),
+                advancementsRemapped.get(),
                 errors.get()
         );
     }

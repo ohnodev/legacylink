@@ -51,15 +51,29 @@ public final class RegistryRemapper {
     }
 
     public static int remapBlockState(int stateId) {
-        return BLOCK_STATE_REMAP.getOrDefault(stateId, stateId);
+        int explicit = BLOCK_STATE_REMAP.getOrDefault(stateId, stateId);
+        if (explicit != stateId) {
+            return explicit;
+        }
+        if (stateId > LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID) {
+            return FALLBACK_BLOCK_STATE;
+        }
+        return stateId;
     }
 
     public static int remapItem(int itemId) {
-        return ITEM_REMAP.getOrDefault(itemId, itemId);
+        int explicit = ITEM_REMAP.getOrDefault(itemId, itemId);
+        if (explicit != itemId) {
+            return explicit;
+        }
+        if (itemId > LegacyLinkConstants.MAX_26_1_ITEM_ID) {
+            return Item.getId(FALLBACK_ITEM);
+        }
+        return itemId;
     }
 
     public static boolean needsBlockRemap(int stateId) {
-        return BLOCK_STATE_REMAP.containsKey(stateId);
+        return BLOCK_STATE_REMAP.containsKey(stateId) || stateId > LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID;
     }
 
     public static int blockStateRemapCount() {

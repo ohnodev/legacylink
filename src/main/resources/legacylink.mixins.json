@@ -3,7 +3,8 @@
   "package": "dev.ohno.legacylink.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "HandshakeMixin"
+    "HandshakeMixin",
+    "StatusPacketMixin"
   ],
   "injectors": {
     "defaultRequire": 1

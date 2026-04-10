@@ -1,6 +1,7 @@
 package dev.ohno.legacylink;
 
 import dev.ohno.legacylink.mapping.RegistryRemapper;
+import dev.ohno.legacylink.runtime.LegacyRuntimeContext;
 import dev.ohno.legacylink.telemetry.TranslationStats;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -16,7 +17,12 @@ public class LegacyLinkMod implements ModInitializer {
     public void onInitialize() {
         LOGGER.info("[LegacyLink] Initializing protocol bridge (26.2 -> 26.1)");
 
-        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            LegacyRuntimeContext.initialize(
+                    server.registryAccess(),
+                    server.overworld().palettedContainerFactory(),
+                    server.overworld().getSectionsCount()
+            );
             RegistryRemapper.buildMappings();
             LOGGER.info("[LegacyLink] Block/item/entity mappings built — {} block states remapped, {} items remapped",
                     RegistryRemapper.blockStateRemapCount(), RegistryRemapper.itemRemapCount());
