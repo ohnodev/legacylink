@@ -61,16 +61,23 @@ public final class AdvancementRewriter {
             rewritten.add(new AdvancementHolder(holder.id(), rebuilt));
         }
 
-        if (remappedIcons > 0) {
-            TranslationStats.recordAdvancementsRemapped(remappedIcons);
+        if (remappedIcons == 0) {
+            if (firstLegacyUnsafeItemId != -1) {
+                LegacyLinkMod.LOGGER.info(
+                        "[LegacyLink][Trace] update_advancements rewritten icons={} first_bad_item_id={}",
+                        remappedIcons,
+                        firstLegacyUnsafeItemId
+                );
+            }
+            return packet;
         }
-        if (remappedIcons > 0 || firstLegacyUnsafeItemId != -1) {
-            LegacyLinkMod.LOGGER.info(
-                    "[LegacyLink][Trace] update_advancements rewritten icons={} first_bad_item_id={}",
-                    remappedIcons,
-                    firstLegacyUnsafeItemId
-            );
-        }
+
+        TranslationStats.recordAdvancementsRemapped(remappedIcons);
+        LegacyLinkMod.LOGGER.info(
+                "[LegacyLink][Trace] update_advancements rewritten icons={} first_bad_item_id={}",
+                remappedIcons,
+                firstLegacyUnsafeItemId
+        );
 
         return new ClientboundUpdateAdvancementsPacket(
                 packet.shouldReset(),

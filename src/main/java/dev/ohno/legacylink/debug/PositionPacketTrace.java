@@ -15,6 +15,7 @@ import net.minecraft.world.phys.Vec3;
 
 import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Compare 26.2 vs 26.1 movement by logging clientbound position-related packets.
@@ -35,8 +36,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class PositionPacketTrace {
 
     private static final AtomicLong SEQ = new AtomicLong();
-    private static volatile Field moveEntityIdField;
-    private static volatile Field rotateHeadEntityIdField;
+    private static final AtomicReference<Field> MOVE_ENTITY_ID_REF = new AtomicReference<>();
+    private static final AtomicReference<Field> ROTATE_HEAD_ENTITY_ID_REF = new AtomicReference<>();
 
     public static boolean enabled() {
         String v = System.getProperty("legacylink.tracePositions", "");
@@ -107,6 +108,7 @@ public final class PositionPacketTrace {
                     "{} type=rotate_head entityId={} yHeadRot={}",
                     base, rotateHeadEntityId(p), p.getYHeadRot()
             );
+            return;
         }
     }
 
@@ -115,31 +117,11 @@ public final class PositionPacketTrace {
     }
 
     private static int moveEntityId(ClientboundMoveEntityPacket p) {
-        try {
-            Field f = moveEntityIdField;
-            if (f == null) {
-                f = ClientboundMoveEntityPacket.class.getDeclaredField("entityId");
-                f.setAccessible(true);
-                moveEntityIdField = f;
-            }
-            return f.getInt(p);
-        } catch (ReflectiveOperationException e) {
-            return -1;
-        }
+        return PacketReflectionUtil.getIntField(p, ClientboundMoveEntityPacket.class, "entityId", MOVE_ENTITY_ID_REF);
     }
 
     private static int rotateHeadEntityId(ClientboundRotateHeadPacket p) {
-        try {
-            Field f = rotateHeadEntityIdField;
-            if (f == null) {
-                f = ClientboundRotateHeadPacket.class.getDeclaredField("entityId");
-                f.setAccessible(true);
-                rotateHeadEntityIdField = f;
-            }
-            return f.getInt(p);
-        } catch (ReflectiveOperationException e) {
-            return -1;
-        }
+        return PacketReflectionUtil.getIntField(p, ClientboundRotateHeadPacket.class, "entityId", ROTATE_HEAD_ENTITY_ID_REF);
     }
 
     private PositionPacketTrace() {}

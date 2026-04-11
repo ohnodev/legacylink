@@ -13,15 +13,28 @@ public final class LegacyOutboundEncoding {
 
     private LegacyOutboundEncoding() {}
 
-    public static void enter(@Nullable Connection connection) {
+    /**
+     * Prefer {@link #enterScoped(Connection)} with try-with-resources so the thread-local is always cleared.
+     */
+    public static Scope enterScoped(@Nullable Connection connection) {
         CURRENT.set(connection);
+        return new Scope();
     }
 
-    public static void leave() {
+    private static void clear() {
         CURRENT.remove();
     }
 
     public static @Nullable Connection connection() {
         return CURRENT.get();
+    }
+
+    public static final class Scope implements AutoCloseable {
+        private Scope() {}
+
+        @Override
+        public void close() {
+            LegacyOutboundEncoding.clear();
+        }
     }
 }

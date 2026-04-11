@@ -35,6 +35,7 @@ public class LegacyLinkMod implements ModInitializer {
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
             LegacyRuntimeContext.bindServer(null);
+            LegacyRuntimeContext.reset();
             TranslationStats.dump();
         });
 

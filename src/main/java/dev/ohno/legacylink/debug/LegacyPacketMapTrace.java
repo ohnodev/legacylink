@@ -35,14 +35,20 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class LegacyPacketMapTrace {
 
+    private static final boolean ENABLED = packetMapTraceEnabled();
+
     private static final AtomicLong SEQ = new AtomicLong();
     private static final ThreadLocal<Long> ACTIVE_SEQ = new ThreadLocal<>();
+
+    private static boolean packetMapTraceEnabled() {
+        String v = System.getProperty("legacylink.tracePacketMap", "");
+        return "true".equalsIgnoreCase(v) || "1".equals(v);
+    }
 
     private LegacyPacketMapTrace() {}
 
     public static boolean enabled() {
-        String v = System.getProperty("legacylink.tracePacketMap", "");
-        return "true".equalsIgnoreCase(v) || "1".equals(v);
+        return ENABLED;
     }
 
     public static long nextSeq() {
@@ -150,23 +156,22 @@ public final class LegacyPacketMapTrace {
             StringBuilder sb = new StringBuilder();
             sb.append("Bundle path=").append(path.isEmpty() ? "/" : path);
             int subCount = 0;
-            for (Packet<? super ClientGamePacketListener> ignored : bundle.subPackets()) {
-                subCount++;
-            }
-            sb.append(" subCount=").append(subCount);
             int i = 0;
+            StringBuilder nestedDetail = new StringBuilder();
             for (Packet<? super ClientGamePacketListener> sub : bundle.subPackets()) {
+                subCount++;
                 if (sub instanceof BundleDelimiterPacket) {
                     i++;
                     continue;
                 }
                 if (sub instanceof ClientboundBundlePacket nested) {
-                    sb.append(" {").append(formatPacketTree(nested, path + "/" + i)).append("}");
+                    nestedDetail.append(" {").append(formatPacketTree(nested, path + "/" + i)).append("}");
                 } else if (isInteresting(sub)) {
-                    sb.append(" {").append(formatPacketLeaf(sub)).append("}");
+                    nestedDetail.append(" {").append(formatPacketLeaf(sub)).append("}");
                 }
                 i++;
             }
+            sb.append(" subCount=").append(subCount).append(nestedDetail);
             return sb.toString();
         }
         return formatPacketLeaf(packet);

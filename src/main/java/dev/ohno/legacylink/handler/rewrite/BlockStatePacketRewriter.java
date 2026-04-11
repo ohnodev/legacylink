@@ -2,6 +2,9 @@ package dev.ohno.legacylink.handler.rewrite;
 
 import dev.ohno.legacylink.mapping.RegistryRemapper;
 import dev.ohno.legacylink.telemetry.TranslationStats;
+import io.netty.buffer.Unpooled;
+import io.netty.util.ReferenceCountUtil;
+import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.world.level.block.Block;
@@ -40,29 +43,49 @@ public final class BlockStatePacketRewriter {
 
     public static ClientboundSectionBlocksUpdatePacket remapSectionBlocksUpdate(ClientboundSectionBlocksUpdatePacket packet) {
         try {
-            BlockState[] states = (BlockState[]) SECTION_STATES_FIELD.get(packet);
-            int remapped = 0;
-            for (int i = 0; i < states.length; i++) {
-                BlockState state = states[i];
+            BlockState[] original = (BlockState[]) SECTION_STATES_FIELD.get(packet);
+            boolean needsRemap = false;
+            for (BlockState state : original) {
                 int oldId = Block.BLOCK_STATE_REGISTRY.getId(state);
-                int newId = RegistryRemapper.remapBlockState(oldId);
-                if (newId != oldId) {
-                    BlockState resolved = Block.BLOCK_STATE_REGISTRY.byId(newId);
-                    if (resolved == null) {
-                        throw new IllegalStateException(
-                                "[LegacyLink] remapSectionBlocksUpdate: no BlockState for id " + newId + " (from " + oldId + ")");
-                    }
-                    states[i] = resolved;
-                    remapped++;
+                if (RegistryRemapper.remapBlockState(oldId) != oldId) {
+                    needsRemap = true;
+                    break;
                 }
             }
-            if (remapped > 0) {
-                TranslationStats.recordSectionBlocksRemap(remapped);
+            if (!needsRemap) {
+                return packet;
+            }
+
+            FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
+            try {
+                ClientboundSectionBlocksUpdatePacket.STREAM_CODEC.encode(buf, packet);
+                ClientboundSectionBlocksUpdatePacket copy = ClientboundSectionBlocksUpdatePacket.STREAM_CODEC.decode(buf);
+                BlockState[] states = (BlockState[]) SECTION_STATES_FIELD.get(copy);
+                int remapped = 0;
+                for (int i = 0; i < states.length; i++) {
+                    BlockState state = states[i];
+                    int oldId = Block.BLOCK_STATE_REGISTRY.getId(state);
+                    int newId = RegistryRemapper.remapBlockState(oldId);
+                    if (newId != oldId) {
+                        BlockState resolved = Block.BLOCK_STATE_REGISTRY.byId(newId);
+                        if (resolved == null) {
+                            throw new IllegalStateException(
+                                    "[LegacyLink] remapSectionBlocksUpdate: no BlockState for id " + newId + " (from " + oldId + ")");
+                        }
+                        states[i] = resolved;
+                        remapped++;
+                    }
+                }
+                if (remapped > 0) {
+                    TranslationStats.recordSectionBlocksRemap(remapped);
+                }
+                return copy;
+            } finally {
+                ReferenceCountUtil.release(buf.unwrap());
             }
         } catch (IllegalAccessException e) {
             throw new IllegalStateException("[LegacyLink] remapSectionBlocksUpdate: states field access failed", e);
         }
-        return packet;
     }
 
     private BlockStatePacketRewriter() {}

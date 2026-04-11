@@ -24,11 +24,13 @@ import java.util.Set;
 public final class LegacyAttributeWireTable {
 
     private static volatile boolean ready;
-    private static Int2IntOpenHashMap serverHolderIdToLegacyHolderId = new Int2IntOpenHashMap();
-    private static final Set<Identifier> LEGACY_SYNCED_IDS = new ObjectOpenHashSet<>();
+    private static volatile Int2IntOpenHashMap serverHolderIdToLegacyHolderId = newIntMap();
+    private static volatile Set<Identifier> LEGACY_SYNCED_IDS = Set.of();
 
-    static {
-        serverHolderIdToLegacyHolderId.defaultReturnValue(-1);
+    private static Int2IntOpenHashMap newIntMap() {
+        Int2IntOpenHashMap m = new Int2IntOpenHashMap();
+        m.defaultReturnValue(-1);
+        return m;
     }
 
     public static boolean isReady() {
@@ -36,9 +38,7 @@ public final class LegacyAttributeWireTable {
     }
 
     public static void rebuild() {
-        serverHolderIdToLegacyHolderId = new Int2IntOpenHashMap();
-        serverHolderIdToLegacyHolderId.defaultReturnValue(-1);
-        LEGACY_SYNCED_IDS.clear();
+        ready = false;
 
         IdMap<Holder<Attribute>> idMap = BuiltInRegistries.ATTRIBUTE.asHolderIdMap();
         List<Identifier> serverSlotId = new ArrayList<>(idMap.size());
@@ -65,9 +65,9 @@ public final class LegacyAttributeWireTable {
         legacyIndex.defaultReturnValue(-1);
         for (int j = 0; j < legacyOrder.size(); j++) {
             legacyIndex.put(legacyOrder.get(j), j);
-            LEGACY_SYNCED_IDS.add(legacyOrder.get(j));
         }
 
+        Int2IntOpenHashMap localServerMap = newIntMap();
         for (int serverId = 0; serverId < serverSlotId.size(); serverId++) {
             Identifier id = serverSlotId.get(serverId);
             if (id == null || stripFromLegacyAttributeSync(id)) {
@@ -75,11 +75,15 @@ public final class LegacyAttributeWireTable {
             }
             int legacyId = legacyIndex.getInt(id);
             if (legacyId >= 0) {
-                serverHolderIdToLegacyHolderId.put(serverId, legacyId);
+                localServerMap.put(serverId, legacyId);
             }
         }
 
+        Set<Identifier> syncedSnapshot = Set.copyOf(legacyOrder);
+        serverHolderIdToLegacyHolderId = localServerMap;
+        LEGACY_SYNCED_IDS = syncedSnapshot;
         ready = true;
+
         LegacyLinkMod.LOGGER.info(
                 "[LegacyLink] Attribute wire table: {} server slots, {} legacy-synced (holder ids remapped for 26.1)",
                 serverSlotId.size(),

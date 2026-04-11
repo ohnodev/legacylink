@@ -44,11 +44,15 @@ public final class LegacyEntityTypeWireRemapper {
     public static int legacyNetworkId(EntityType<?> type) {
         Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
         if (key == null) {
-            return BuiltInRegistries.ENTITY_TYPE.getId(type);
+            throw new IllegalStateException(
+                    "[LegacyLink] legacyNetworkId: EntityType has no registry key (" + type
+                            + "). Filtered or synthetic types must be remapped to a legacy substitute before encoding.");
         }
         int idx = legacySyncOrder.indexOf(key);
         if (idx < 0) {
-            return BuiltInRegistries.ENTITY_TYPE.getId(type);
+            throw new IllegalStateException(
+                    "[LegacyLink] legacyNetworkId: EntityType " + key + " (" + type
+                            + ") not in legacy entity_type sync order — map to a legacy substitute before calling legacyNetworkId.");
         }
         return idx;
     }

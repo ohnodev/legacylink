@@ -101,6 +101,13 @@ public final class VillagerEntityData2661 {
             List<SynchedEntityData.DataValue<?>> packedItems,
             int booleanSerializerId
     ) {
+        boolean hasVillagerDataSlot = false;
+        for (SynchedEntityData.DataValue<?> v : packedItems) {
+            if (v.id() == VILLAGER_DATA_26_2 && v.value() instanceof VillagerData) {
+                hasVillagerDataSlot = true;
+                break;
+            }
+        }
         boolean changed = false;
         List<SynchedEntityData.DataValue<?>> out = new ArrayList<>(packedItems.size());
         for (SynchedEntityData.DataValue<?> v : packedItems) {
@@ -109,7 +116,7 @@ public final class VillagerEntityData2661 {
                 changed = true;
                 continue;
             }
-            if (id == VILLAGER_FINALIZED_26_2 && isBooleanFinalizedSlot(v, booleanSerializerId)) {
+            if (id == VILLAGER_FINALIZED_26_2 && isBooleanFinalizedSlot(v, booleanSerializerId) && hasVillagerDataSlot) {
                 changed = true;
                 continue;
             }

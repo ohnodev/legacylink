@@ -87,6 +87,9 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     private static final String HANDLER_NAME = "legacylink";
 
     private static final Constructor<ClientboundUpdateAttributesPacket> UPDATE_ATTRIBUTES_REBUILD_CTOR;
+    private static final Field TAGS_NETWORK_PAYLOAD_TAGS_FIELD;
+    private static final Field RECIPE_ITEMS_FIELD;
+    private static final Constructor<RecipePropertySet> RECIPE_PROP_SET_CTOR;
 
     static {
         try {
@@ -94,7 +97,16 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                     ClientboundUpdateAttributesPacket.class.getDeclaredConstructor(int.class, List.class);
             ctor.setAccessible(true);
             UPDATE_ATTRIBUTES_REBUILD_CTOR = ctor;
-        } catch (NoSuchMethodException e) {
+
+            TAGS_NETWORK_PAYLOAD_TAGS_FIELD =
+                    TagNetworkSerialization.NetworkPayload.class.getDeclaredField("tags");
+            TAGS_NETWORK_PAYLOAD_TAGS_FIELD.setAccessible(true);
+
+            RECIPE_ITEMS_FIELD = RecipePropertySet.class.getDeclaredField("items");
+            RECIPE_ITEMS_FIELD.setAccessible(true);
+            RECIPE_PROP_SET_CTOR = RecipePropertySet.class.getDeclaredConstructor(Set.class);
+            RECIPE_PROP_SET_CTOR.setAccessible(true);
+        } catch (NoSuchMethodException | NoSuchFieldException e) {
             throw new ExceptionInInitializerError(e);
         }
     }
@@ -144,11 +156,8 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         Connection encodeConn = ctx.pipeline().get(HandlerNames.PACKET_HANDLER) instanceof Connection c ? c : null;
-        LegacyOutboundEncoding.enter(encodeConn);
-        try {
+        try (LegacyOutboundEncoding.Scope ignored = LegacyOutboundEncoding.enterScoped(encodeConn)) {
             writeTranslated(ctx, msg, promise);
-        } finally {
-            LegacyOutboundEncoding.leave();
         }
     }
 
@@ -556,7 +565,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             StringBuilder sb = new StringBuilder();
             for (var v : items) {
                 max = Math.max(max, v.id());
-                if (sb.length() > 0) {
+                if (!sb.isEmpty()) {
                     sb.append(',');
                 }
                 sb.append(v.id());
@@ -664,14 +673,10 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             Map<ResourceKey<RecipePropertySet>, RecipePropertySet> remappedSets = new HashMap<>(itemSets.size());
             boolean changed = false;
 
-            Field recipeItemsField = RecipePropertySet.class.getDeclaredField("items");
-            recipeItemsField.setAccessible(true);
-            var ctor = RecipePropertySet.class.getDeclaredConstructor(Set.class);
-            ctor.setAccessible(true);
             for (Map.Entry<ResourceKey<RecipePropertySet>, RecipePropertySet> entry : itemSets.entrySet()) {
                 RecipePropertySet set = entry.getValue();
                 Set<net.minecraft.core.Holder<Item>> items =
-                        (Set<net.minecraft.core.Holder<Item>>) recipeItemsField.get(set);
+                        (Set<net.minecraft.core.Holder<Item>>) RECIPE_ITEMS_FIELD.get(set);
                 Set<net.minecraft.core.Holder<Item>> remappedItems = new HashSet<>(items.size());
                 boolean setChanged = false;
                 for (net.minecraft.core.Holder<Item> holder : items) {
@@ -681,7 +686,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                 }
                 if (setChanged) {
                     changed = true;
-                    RecipePropertySet rebuilt = ctor.newInstance(remappedItems);
+                    RecipePropertySet rebuilt = RECIPE_PROP_SET_CTOR.newInstance(remappedItems);
                     remappedSets.put(entry.getKey(), rebuilt);
                 } else {
                     remappedSets.put(entry.getKey(), set);
@@ -707,21 +712,24 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                 return packet;
             }
 
-            Field tagsField = TagNetworkSerialization.NetworkPayload.class.getDeclaredField("tags");
-            tagsField.setAccessible(true);
-            Map<Identifier, IntList> tagMap = (Map<Identifier, IntList>) tagsField.get(payload);
+            Map<Identifier, IntList> tagMap =
+                    (Map<Identifier, IntList>) TAGS_NETWORK_PAYLOAD_TAGS_FIELD.get(payload);
             boolean changed = false;
             for (Map.Entry<Identifier, IntList> entry : tagMap.entrySet()) {
                 IntList ids = entry.getValue();
                 IntArrayList rewritten = new IntArrayList(ids.size());
+                boolean changedForEntry = false;
                 for (int i = 0; i < ids.size(); i++) {
                     int oldId = ids.getInt(i);
                     int mappedId = ItemRewriter.remapItemIdStrict(oldId);
                     rewritten.add(mappedId);
-                    changed |= mappedId != oldId;
+                    if (mappedId != oldId) {
+                        changedForEntry = true;
+                    }
                 }
-                if (changed) {
+                if (changedForEntry) {
                     entry.setValue(rewritten);
+                    changed = true;
                 }
             }
             if (changed) {

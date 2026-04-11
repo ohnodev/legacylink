@@ -21,7 +21,7 @@ This is not a ViaVersion port: it is a small server-only subset. For full multi-
 ### Known limitations (v0.1)
 
 - **Block state ID ceiling** (`MAX_26_1_BLOCKSTATE_ID` in `LegacyLinkConstants`) is the **inclusive** last index the legacy client accepts (`0..MAX`). It is pinned to the lowest supported legacy client (`26.1.1`: `30207`) so `26.2` palette ids (`30208+`) are always remapped; setting this too high causes legacy clients to crash in `LinearPalette.read`.
-- Item stack remapping in inventory packets is not yet fully implemented
+- **Item stacks (outbound):** `LegacyPacketHandler` remaps and sanitizes stacks for legacy clients on container set slot/content, cursor item, player inventory, advancements (icons), and recipes/tags; wire-level item IDs are translated via `LegacyItemIdTable` + `ItemStackOptionalCodecMixin`. Inbound (client→server) item data is not rewritten.
 
 ## Requirements
 

@@ -7,6 +7,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.chunk.PalettedContainerFactory;
 import org.jspecify.annotations.Nullable;
 
+import java.util.concurrent.CompletableFuture;
+
 public final class LegacyRuntimeContext {
 
     private static volatile RegistryAccess registryAccess;
@@ -24,11 +26,47 @@ public final class LegacyRuntimeContext {
         server = minecraftServer;
     }
 
+    /**
+     * Clears server reference and overworld-derived chunk context (call on server stop after {@link #bindServer}{@code (null)} if desired).
+     */
+    public static void reset() {
+        registryAccess = null;
+        chunkContainerFactory = null;
+        sectionCount = 0;
+    }
+
     public static @Nullable MinecraftServer server() {
         return server;
     }
 
+    /**
+     * Looks up an entity on the server levels. When not called from the server thread, schedules the lookup on the
+     * server thread and waits for the result (same semantics as other cross-thread world access guards).
+     */
     public static @Nullable Entity findEntity(int entityId) {
+        MinecraftServer s = server;
+        if (s == null) {
+            return null;
+        }
+        if (s.isSameThread()) {
+            return findEntityOnLevels(entityId);
+        }
+        CompletableFuture<Entity> future = new CompletableFuture<>();
+        s.execute(() -> {
+            try {
+                future.complete(findEntityOnLevels(entityId));
+            } catch (Throwable t) {
+                future.completeExceptionally(t);
+            }
+        });
+        try {
+            return future.join();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static @Nullable Entity findEntityOnLevels(int entityId) {
         MinecraftServer s = server;
         if (s == null) {
             return null;
@@ -43,11 +81,19 @@ public final class LegacyRuntimeContext {
     }
 
     public static RegistryAccess registryAccess() {
-        return registryAccess;
+        RegistryAccess ra = registryAccess;
+        if (ra == null) {
+            throw new IllegalStateException("LegacyRuntimeContext not initialized — call initialize() after SERVER_STARTED");
+        }
+        return ra;
     }
 
     public static PalettedContainerFactory chunkContainerFactory() {
-        return chunkContainerFactory;
+        PalettedContainerFactory f = chunkContainerFactory;
+        if (f == null) {
+            throw new IllegalStateException("LegacyRuntimeContext not initialized — call initialize() after SERVER_STARTED");
+        }
+        return f;
     }
 
     public static int sectionCount() {

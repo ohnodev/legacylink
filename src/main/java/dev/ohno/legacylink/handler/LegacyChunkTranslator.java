@@ -6,6 +6,7 @@ import dev.ohno.legacylink.mapping.RegistryRemapper;
 import dev.ohno.legacylink.runtime.LegacyRuntimeContext;
 import dev.ohno.legacylink.telemetry.TranslationStats;
 import io.netty.buffer.Unpooled;
+import io.netty.util.ReferenceCountUtil;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 public final class LegacyChunkTranslator {
 
@@ -32,6 +34,8 @@ public final class LegacyChunkTranslator {
     private static final boolean TRACE_CHUNK_STATES = Boolean.getBoolean("legacylink.traceChunkStates");
     private static final int TRACE_CHUNK_STATE_THRESHOLD = Integer.getInteger("legacylink.traceChunkStateThreshold", 30180);
     private static final Set<String> TRACE_SEEN_STATE_MAPPINGS = ConcurrentHashMap.newKeySet();
+
+    private static final ConcurrentMap<Class<?>, Field> BLOCK_ENTITY_ENTRY_TYPE_FIELD_CACHE = new ConcurrentHashMap<>();
 
     private static final Field CHUNK_BUFFER_FIELD;
     private static final Field CHUNK_BLOCK_ENTITIES_FIELD;
@@ -111,13 +115,17 @@ public final class LegacyChunkTranslator {
             }
 
             FriendlyByteBuf out = new FriendlyByteBuf(Unpooled.buffer());
-            for (int i = 0; i < sections.size(); i++) {
-                writeSectionWithContext(sections.get(i), out, i);
-            }
+            try {
+                for (int i = 0; i < sections.size(); i++) {
+                    writeSectionWithContext(sections.get(i), out, i);
+                }
 
-            byte[] translatedBuffer = new byte[out.writerIndex()];
-            out.getBytes(0, translatedBuffer);
-            CHUNK_BUFFER_FIELD.set(chunkData, translatedBuffer);
+                byte[] translatedBuffer = new byte[out.writerIndex()];
+                out.getBytes(0, translatedBuffer);
+                CHUNK_BUFFER_FIELD.set(chunkData, translatedBuffer);
+            } finally {
+                ReferenceCountUtil.release(out.unwrap());
+            }
 
             int filteredBlockEntities = filterChunkBlockEntities(chunkData);
 
@@ -222,8 +230,7 @@ public final class LegacyChunkTranslator {
         int before = blockEntities.size();
         blockEntities.removeIf(entry -> {
             try {
-                Field typeField = entry.getClass().getDeclaredField("type");
-                typeField.setAccessible(true);
+                Field typeField = blockEntityTypeField(entry.getClass());
                 BlockEntityType<?> type = (BlockEntityType<?>) typeField.get(entry);
                 Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
                 return id != null && LegacyLinkConstants.POTENT_SULFUR_BLOCK_ENTITY_ID.equals(id.toString());
@@ -232,6 +239,19 @@ public final class LegacyChunkTranslator {
             }
         });
         return before - blockEntities.size();
+    }
+
+    private static Field blockEntityTypeField(Class<?> entryClass) {
+        return BLOCK_ENTITY_ENTRY_TYPE_FIELD_CACHE.computeIfAbsent(entryClass, cls -> {
+            try {
+                Field f = cls.getDeclaredField("type");
+                f.setAccessible(true);
+                return f;
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException(
+                        "[LegacyLink] Chunk block entity filter: no accessible type field on " + cls.getName(), e);
+            }
+        });
     }
 
     private record SectionRewriteResult(LevelChunkSection section, int remappedStates) {}

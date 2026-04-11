@@ -93,5 +93,10 @@ public final class LegacyLinkConstants {
             "minecraft:friction_modifier"
     );
 
+    /** Built-in items omitted from the 26.1 wire-id sequence (26.2-only); keep {@link #SULFUR_ITEM_IDS} authoritative. */
+    public static boolean is26_2OnlyItemId(String registryId) {
+        return SULFUR_ITEM_IDS.contains(registryId);
+    }
+
     private LegacyLinkConstants() {}
 }

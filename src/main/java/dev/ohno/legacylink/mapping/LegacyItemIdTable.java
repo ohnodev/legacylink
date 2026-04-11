@@ -83,10 +83,9 @@ public final class LegacyItemIdTable {
 
     private static boolean is26_2Only(Item item) {
         Identifier key = BuiltInRegistries.ITEM.getKey(item);
-        if (key == null) return true;
-        String id = key.toString();
-        return LegacyLinkConstants.SULFUR_ITEM_IDS.contains(id)
-                || id.contains("cinnabar")
-                || id.contains("sulfur");
+        if (key == null) {
+            return true;
+        }
+        return LegacyLinkConstants.is26_2OnlyItemId(key.toString());
     }
 }

@@ -21,9 +21,9 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Logs <b>every</b> clientbound packet for {@link LegacyTracker#isLegacy legacy} connections so {@code logs/latest.log}
@@ -42,14 +42,20 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public final class LegacyOutboundPacketCapture {
 
-    private static final AtomicLong SEQ = new AtomicLong();
-    private static volatile @Nullable Field moveEntityIdField;
-    private static volatile @Nullable Field cameraEntityIdField;
-    private static volatile @Nullable Field rotateHeadEntityIdField;
+    private static final boolean CAPTURE_OUTBOUND_ENABLED = outboundCapturePropertyTrue();
 
-    public static boolean enabled() {
+    private static final AtomicLong SEQ = new AtomicLong();
+    private static final AtomicReference<Field> MOVE_ENTITY_ID_REF = new AtomicReference<>();
+    private static final AtomicReference<Field> ROTATE_HEAD_ENTITY_ID_REF = new AtomicReference<>();
+    private static volatile @Nullable Field cameraEntityIdField;
+
+    private static boolean outboundCapturePropertyTrue() {
         String v = System.getProperty("legacylink.captureOutbound", "");
         return "true".equalsIgnoreCase(v) || "1".equals(v);
+    }
+
+    public static boolean enabled() {
+        return CAPTURE_OUTBOUND_ENABLED;
     }
 
     public static void logIfLegacy(Connection connection, Packet<?> packet, String stage) {
@@ -61,14 +67,15 @@ public final class LegacyOutboundPacketCapture {
 
     private static void logRecursive(Connection connection, Packet<?> packet, String stage, String path) {
         if (packet instanceof ClientboundBundlePacket bundle) {
-            List<Packet<? super ClientGamePacketListener>> subs = new ArrayList<>();
-            for (Packet<? super ClientGamePacketListener> s : bundle.subPackets()) {
-                subs.add(s);
+            int count = 0;
+            for (Packet<? super ClientGamePacketListener> ignored : bundle.subPackets()) {
+                count++;
             }
             emit(connection, stage, path, Identifier.withDefaultNamespace("bundle"), "ClientboundBundlePacket",
-                    "subPackets=" + subs.size());
-            for (int i = 0; i < subs.size(); i++) {
-                logRecursive(connection, subs.get(i), stage, path + "bundle[" + i + "].");
+                    "subPackets=" + count);
+            int i = 0;
+            for (Packet<? super ClientGamePacketListener> sub : bundle.subPackets()) {
+                logRecursive(connection, sub, stage, path + "bundle[" + i++ + "].");
             }
             return;
         }
@@ -144,31 +151,11 @@ public final class LegacyOutboundPacketCapture {
     }
 
     private static int moveEntityId(ClientboundMoveEntityPacket p) {
-        try {
-            Field f = moveEntityIdField;
-            if (f == null) {
-                f = ClientboundMoveEntityPacket.class.getDeclaredField("entityId");
-                f.setAccessible(true);
-                moveEntityIdField = f;
-            }
-            return f.getInt(p);
-        } catch (ReflectiveOperationException e) {
-            return -1;
-        }
+        return PacketReflectionUtil.getIntField(p, ClientboundMoveEntityPacket.class, "entityId", MOVE_ENTITY_ID_REF);
     }
 
     private static int rotateHeadEntityId(ClientboundRotateHeadPacket p) {
-        try {
-            Field f = rotateHeadEntityIdField;
-            if (f == null) {
-                f = ClientboundRotateHeadPacket.class.getDeclaredField("entityId");
-                f.setAccessible(true);
-                rotateHeadEntityIdField = f;
-            }
-            return f.getInt(p);
-        } catch (ReflectiveOperationException e) {
-            return -1;
-        }
+        return PacketReflectionUtil.getIntField(p, ClientboundRotateHeadPacket.class, "entityId", ROTATE_HEAD_ENTITY_ID_REF);
     }
 
     private static int cameraEntityId(ClientboundSetCameraPacket packet) {
@@ -190,7 +177,7 @@ public final class LegacyOutboundPacketCapture {
                 return -1;
             }
             return f.getInt(packet);
-        } catch (ReflectiveOperationException e) {
+        } catch (ReflectiveOperationException | RuntimeException e) {
             return -1;
         }
     }

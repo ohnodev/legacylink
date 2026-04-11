@@ -17,6 +17,8 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class CameraPacketTrace {
 
     private static final AtomicLong SEQ = new AtomicLong();
+    private static volatile @org.jspecify.annotations.Nullable Field cameraEntityIdField;
+    private static final Object CAMERA_FIELD_LOCK = new Object();
 
     public static boolean enabled() {
         String v = System.getProperty("legacylink.traceCamera", "");
@@ -39,17 +41,40 @@ public final class CameraPacketTrace {
         );
     }
 
-    private static int readCameraEntityId(ClientboundSetCameraPacket packet) {
-        for (String name : new String[] {"cameraId", "id"}) {
-            try {
-                Field f = ClientboundSetCameraPacket.class.getDeclaredField(name);
-                f.setAccessible(true);
-                return f.getInt(packet);
-            } catch (ReflectiveOperationException ignored) {
-                // try next field name (mappings differ)
-            }
+    private static void ensureCameraFieldResolved() {
+        if (cameraEntityIdField != null) {
+            return;
         }
-        return -1;
+        synchronized (CAMERA_FIELD_LOCK) {
+            if (cameraEntityIdField != null) {
+                return;
+            }
+            Field resolved = null;
+            for (String name : new String[] {"cameraId", "id"}) {
+                try {
+                    Field f = ClientboundSetCameraPacket.class.getDeclaredField(name);
+                    f.setAccessible(true);
+                    resolved = f;
+                    break;
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                    // try next field name (mappings differ) or module access
+                }
+            }
+            cameraEntityIdField = resolved;
+        }
+    }
+
+    private static int readCameraEntityId(ClientboundSetCameraPacket packet) {
+        ensureCameraFieldResolved();
+        Field f = cameraEntityIdField;
+        if (f == null) {
+            return -1;
+        }
+        try {
+            return f.getInt(packet);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return -1;
+        }
     }
 
     private CameraPacketTrace() {}
