@@ -19,12 +19,19 @@ import net.minecraft.world.level.chunk.LevelChunkSection;
 import java.lang.ScopedValue;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class LegacyChunkTranslator {
 
     /** Hard cap so a corrupt buffer cannot loop forever (vanilla is on the order of tens of sections). */
     private static final int MAX_CHUNK_SECTIONS = 1024;
+    private static final boolean TRACE_CHUNK_STATES = Boolean.getBoolean("legacylink.traceChunkStates");
+    private static final int TRACE_CHUNK_STATE_THRESHOLD = Integer.getInteger("legacylink.traceChunkStateThreshold", 30180);
+    private static final Set<String> TRACE_SEEN_STATE_MAPPINGS = ConcurrentHashMap.newKeySet();
 
     private static final Field CHUNK_BUFFER_FIELD;
     private static final Field CHUNK_BLOCK_ENTITIES_FIELD;
@@ -79,6 +86,7 @@ public final class LegacyChunkTranslator {
              */
             List<LevelChunkSection> sections = new ArrayList<>();
             int remappedStates = 0;
+            Map<String, Integer> tracePairCounts = TRACE_CHUNK_STATES ? new HashMap<>() : null;
 
             int sectionIndex = 0;
             while (in.readableBytes() > 0) {
@@ -90,7 +98,13 @@ public final class LegacyChunkTranslator {
                 }
                 LevelChunkSection section = new LevelChunkSection(LegacyRuntimeContext.chunkContainerFactory());
                 section.read(in);
-                SectionRewriteResult rewritten = rewriteSectionStates(section);
+                SectionRewriteResult rewritten = rewriteSectionStates(
+                        section,
+                        packet.getX(),
+                        packet.getZ(),
+                        sectionIndex,
+                        tracePairCounts
+                );
                 remappedStates += rewritten.remappedStates();
                 sections.add(rewritten.section());
                 sectionIndex++;
@@ -114,6 +128,18 @@ public final class LegacyChunkTranslator {
                         packet.getX(), packet.getZ(), remappedStates, filteredBlockEntities
                 );
             }
+            if (TRACE_CHUNK_STATES && tracePairCounts != null && !tracePairCounts.isEmpty()) {
+                String mappingSummary = tracePairCounts.entrySet().stream()
+                        .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
+                        .limit(32)
+                        .map(e -> e.getKey() + " x" + e.getValue())
+                        .reduce((a, b) -> a + ", " + b)
+                        .orElse("");
+                LegacyLinkMod.LOGGER.info(
+                        "[LegacyLink][ChunkStateTrace] chunk={},{} sections={} pairs={}",
+                        packet.getX(), packet.getZ(), sections.size(), mappingSummary
+                );
+            }
         } catch (IllegalAccessException e) {
             throw new IllegalStateException(
                     "[LegacyLink] Chunk remap failed for " + packet.getX() + "," + packet.getZ(), e);
@@ -133,7 +159,13 @@ public final class LegacyChunkTranslator {
         section.write(out);
     }
 
-    private static SectionRewriteResult rewriteSectionStates(LevelChunkSection sourceSection) throws IllegalAccessException {
+    private static SectionRewriteResult rewriteSectionStates(
+            LevelChunkSection sourceSection,
+            int chunkX,
+            int chunkZ,
+            int sectionIndex,
+            Map<String, Integer> tracePairCounts
+    ) throws IllegalAccessException {
         LevelChunkSection rewritten = new LevelChunkSection(LegacyRuntimeContext.chunkContainerFactory());
         SECTION_BIOMES_FIELD.set(rewritten, sourceSection.getBiomes().copy());
 
@@ -144,6 +176,25 @@ public final class LegacyChunkTranslator {
                     BlockState state = sourceSection.getBlockState(x, y, z);
                     int oldStateId = Block.BLOCK_STATE_REGISTRY.getId(state);
                     int newStateId = RegistryRemapper.remapBlockState(oldStateId);
+                    if (tracePairCounts != null && (oldStateId != newStateId || oldStateId >= TRACE_CHUNK_STATE_THRESHOLD)) {
+                        String key = oldStateId + "->" + newStateId;
+                        tracePairCounts.merge(key, 1, Integer::sum);
+                        if (TRACE_SEEN_STATE_MAPPINGS.add(key)) {
+                            Identifier blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+                            LegacyLinkMod.LOGGER.info(
+                                    "[LegacyLink][ChunkStateTrace] first_pair={} block={} state={} chunk={},{} section={} pos={},{},{}",
+                                    key,
+                                    blockId,
+                                    state,
+                                    chunkX,
+                                    chunkZ,
+                                    sectionIndex,
+                                    x,
+                                    y,
+                                    z
+                            );
+                        }
+                    }
                     BlockState toWrite = state;
                     if (newStateId != oldStateId) {
                         BlockState resolved = Block.BLOCK_STATE_REGISTRY.byId(newStateId);

@@ -10,7 +10,9 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.PointedDripstoneBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.SpeleothemThickness;
 
 /**
  * Server-side 26.2 → 26.1 numeric remaps used on the wire. Same role as Via’s per-protocol mapping tables, but
@@ -44,6 +46,20 @@ public final class RegistryRemapper {
             }
         }
 
+        // 26.1.1 cannot decode pointed_dripstone tip_merge states (observed ids 30205/30207).
+        // Map them to stone to guarantee a legacy-safe wire id.
+        for (BlockState state : Blocks.POINTED_DRIPSTONE.getStateDefinition().getPossibleStates()) {
+            if (state.getValue(PointedDripstoneBlock.THICKNESS) == SpeleothemThickness.TIP_MERGE) {
+                int fromId = Block.BLOCK_STATE_REGISTRY.getId(state);
+                int toId = stoneStateId;
+                BLOCK_STATE_REMAP.put(fromId, toId);
+                LegacyLinkMod.LOGGER.debug(
+                        "[LegacyLink] Mapped pointed_dripstone {}({}) -> stone({})",
+                        state, fromId, toId
+                );
+            }
+        }
+
         int stoneItemId = Item.getId(Items.STONE);
         for (Item item : BuiltInRegistries.ITEM) {
             Identifier itemId = BuiltInRegistries.ITEM.getKey(item);
@@ -53,6 +69,7 @@ public final class RegistryRemapper {
             }
         }
 
+        LegacyItemIdTable.rebuild();
         LegacyAttributeWireTable.rebuild();
         LegacyEntityTypeWireRemapper.rebuild();
 
@@ -61,18 +78,15 @@ public final class RegistryRemapper {
     }
 
     public static int remapBlockState(int stateId) {
-        int explicit = BLOCK_STATE_REMAP.getOrDefault(stateId, stateId);
-        if (explicit != stateId) {
-            return explicit;
-        }
-        if (stateId > LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID) {
+        int mapped = BLOCK_STATE_REMAP.getOrDefault(stateId, stateId);
+        if (mapped > LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID) {
             return fallbackBlockStateId;
         }
-        BlockState atId = Block.BLOCK_STATE_REGISTRY.byId(stateId);
+        BlockState atId = Block.BLOCK_STATE_REGISTRY.byId(mapped);
         if (atId == null) {
             return fallbackBlockStateId;
         }
-        return stateId;
+        return mapped;
     }
 
     /**

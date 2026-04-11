@@ -28,7 +28,20 @@ public final class LegacyLinkConstants {
             "minecraft:sulfur_brick_slab",
             "minecraft:sulfur_brick_stairs",
             "minecraft:sulfur_brick_wall",
-            "minecraft:chiseled_sulfur"
+            "minecraft:chiseled_sulfur",
+            "minecraft:cinnabar",
+            "minecraft:cinnabar_slab",
+            "minecraft:cinnabar_stairs",
+            "minecraft:cinnabar_wall",
+            "minecraft:polished_cinnabar",
+            "minecraft:polished_cinnabar_slab",
+            "minecraft:polished_cinnabar_stairs",
+            "minecraft:polished_cinnabar_wall",
+            "minecraft:cinnabar_bricks",
+            "minecraft:cinnabar_brick_slab",
+            "minecraft:cinnabar_brick_stairs",
+            "minecraft:cinnabar_brick_wall",
+            "minecraft:chiseled_cinnabar"
     );
 
     public static final Set<String> SULFUR_ITEM_IDS = Set.of(
@@ -46,6 +59,19 @@ public final class LegacyLinkConstants {
             "minecraft:sulfur_brick_stairs",
             "minecraft:sulfur_brick_wall",
             "minecraft:chiseled_sulfur",
+            "minecraft:cinnabar",
+            "minecraft:cinnabar_slab",
+            "minecraft:cinnabar_stairs",
+            "minecraft:cinnabar_wall",
+            "minecraft:polished_cinnabar",
+            "minecraft:polished_cinnabar_slab",
+            "minecraft:polished_cinnabar_stairs",
+            "minecraft:polished_cinnabar_wall",
+            "minecraft:cinnabar_bricks",
+            "minecraft:cinnabar_brick_slab",
+            "minecraft:cinnabar_brick_stairs",
+            "minecraft:cinnabar_brick_wall",
+            "minecraft:chiseled_cinnabar",
             "minecraft:sulfur_cube_bucket",
             "minecraft:sulfur_cube_spawn_egg"
     );
