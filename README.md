@@ -20,7 +20,7 @@ This is not a ViaVersion port: it is a small server-only subset. For full multi-
 
 ### Known limitations (v0.1)
 
-- **Block state ID ceiling** (`MAX_26_1_BLOCKSTATE_ID` in `LegacyLinkConstants`) is the **inclusive** last index the legacy client accepts (`0..MAX`). It must match that client (e.g. 26.1.2: `30208` so id `30209` is out of range). Raise it when a newer 26.1.x grows the registry; if it is too high, 26.2-only palette ids slip through and the client crashes in `LinearPalette.read`.
+- **Block state ID ceiling** (`MAX_26_1_BLOCKSTATE_ID` in `LegacyLinkConstants`) is the **inclusive** last index the legacy client accepts (`0..MAX`). It is pinned to the lowest supported legacy client (`26.1.1`: `30207`) so `26.2` palette ids (`30208+`) are always remapped; setting this too high causes legacy clients to crash in `LinearPalette.read`.
 - Item stack remapping in inventory packets is not yet fully implemented
 
 ## Requirements
