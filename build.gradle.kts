@@ -36,3 +36,10 @@ loom {
 tasks.jar {
     archiveBaseName.set("legacylink")
 }
+
+tasks.processResources {
+    inputs.property("version", version)
+    filesMatching("fabric.mod.json") {
+        expand(mapOf("version" to version))
+    }
+}
