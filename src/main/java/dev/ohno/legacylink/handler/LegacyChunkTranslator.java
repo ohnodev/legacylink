@@ -12,17 +12,16 @@ import net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.Block;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 
+import java.lang.ScopedValue;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
-import java.lang.ScopedValue;
 
-final class LegacyChunkTranslator {
+public final class LegacyChunkTranslator {
 
     private static final Field CHUNK_BUFFER_FIELD;
     private static final Field CHUNK_BLOCK_ENTITIES_FIELD;
@@ -41,7 +40,7 @@ final class LegacyChunkTranslator {
             SECTION_BIOMES_FIELD = LevelChunkSection.class.getDeclaredField("biomes");
             SECTION_BIOMES_FIELD.setAccessible(true);
         } catch (NoSuchFieldException e) {
-            throw new RuntimeException("LegacyLink reflection init failed for chunk packet internals", e);
+            throw new ExceptionInInitializerError(e);
         }
 
         Object packetInfoKey = null;
@@ -54,16 +53,18 @@ final class LegacyChunkTranslator {
             sectionIndexField.setAccessible(true);
             packetInfoKey = packetInfoField.get(null);
             sectionIndexKey = sectionIndexField.get(null);
-        } catch (Throwable ignored) {
-            // AntiXray not present or API changed; fallback path will still work without binding.
+        } catch (ClassNotFoundException e) {
+            // AntiXray mod not present
+        } catch (ReflectiveOperationException e) {
+            throw new ExceptionInInitializerError(e);
         }
         ANTIXRAY_PACKET_INFO_KEY = packetInfoKey;
         ANTIXRAY_CHUNK_SECTION_INDEX_KEY = sectionIndexKey;
     }
 
-    static ClientboundLevelChunkWithLightPacket remapChunkPacket(ClientboundLevelChunkWithLightPacket packet) {
+    public static ClientboundLevelChunkWithLightPacket remapChunkPacket(ClientboundLevelChunkWithLightPacket packet) {
         if (!LegacyRuntimeContext.isReady()) {
-            return packet;
+            throw new IllegalStateException("[LegacyLink] LegacyRuntimeContext not ready; refusing passthrough chunk packet");
         }
         try {
             ClientboundLevelChunkPacketData chunkData = packet.getChunkData();
@@ -99,9 +100,9 @@ final class LegacyChunkTranslator {
                         packet.getX(), packet.getZ(), remappedStates, filteredBlockEntities
                 );
             }
-        } catch (Exception e) {
-            LegacyLinkMod.LOGGER.warn("[LegacyLink] Failed to remap chunk packet {},{}", packet.getX(), packet.getZ(), e);
-            TranslationStats.recordError();
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException(
+                    "[LegacyLink] Chunk remap failed for " + packet.getX() + "," + packet.getZ(), e);
         }
         return packet;
     }
@@ -120,7 +121,6 @@ final class LegacyChunkTranslator {
 
     private static SectionRewriteResult rewriteSectionStates(LevelChunkSection sourceSection) throws IllegalAccessException {
         LevelChunkSection rewritten = new LevelChunkSection(LegacyRuntimeContext.chunkContainerFactory());
-        // Keep source biome palette intact while rebuilding block-state palette.
         SECTION_BIOMES_FIELD.set(rewritten, sourceSection.getBiomes().copy());
 
         int remapped = 0;
@@ -132,11 +132,12 @@ final class LegacyChunkTranslator {
                     int newStateId = RegistryRemapper.remapBlockState(oldStateId);
                     BlockState toWrite = state;
                     if (newStateId != oldStateId) {
-                        BlockState fallback = Block.BLOCK_STATE_REGISTRY.byId(newStateId);
-                        if (fallback == null) {
-                            fallback = Blocks.STONE.defaultBlockState();
+                        BlockState resolved = Block.BLOCK_STATE_REGISTRY.byId(newStateId);
+                        if (resolved == null) {
+                            throw new IllegalStateException(
+                                    "[LegacyLink] Chunk remap: no BlockState for id " + newStateId + " (from " + oldStateId + ")");
                         }
-                        toWrite = fallback;
+                        toWrite = resolved;
                         remapped++;
                     }
                     rewritten.setBlockState(x, y, z, toWrite, false);
@@ -161,8 +162,8 @@ final class LegacyChunkTranslator {
                 BlockEntityType<?> type = (BlockEntityType<?>) typeField.get(entry);
                 Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(type);
                 return id != null && LegacyLinkConstants.POTENT_SULFUR_BLOCK_ENTITY_ID.equals(id.toString());
-            } catch (Exception ignored) {
-                return false;
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("[LegacyLink] Chunk block entity filter: cannot read type field", e);
             }
         });
         return before - blockEntities.size();

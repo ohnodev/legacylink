@@ -12,6 +12,11 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
+/**
+ * Server-side 26.2 → 26.1 numeric remaps used on the wire. Same role as Via’s per-protocol mapping tables, but
+ * scoped to this version pair: explicit {@link LegacyLinkConstants} entries plus range guards so unknown high ids
+ * never reach a 26.1 client.
+ */
 public final class RegistryRemapper {
 
     private static final Int2IntMap BLOCK_STATE_REMAP = new Int2IntOpenHashMap();
@@ -46,6 +51,9 @@ public final class RegistryRemapper {
             }
         }
 
+        LegacyAttributeWireTable.rebuild();
+        LegacyEntityTypeWireRemapper.rebuild();
+
         LegacyLinkMod.LOGGER.info("[LegacyLink] Registry mappings built: {} block states, {} items",
                 BLOCK_STATE_REMAP.size(), ITEM_REMAP.size());
     }
@@ -58,9 +66,17 @@ public final class RegistryRemapper {
         if (stateId > LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID) {
             return FALLBACK_BLOCK_STATE;
         }
+        BlockState atId = Block.BLOCK_STATE_REGISTRY.byId(stateId);
+        if (atId == null) {
+            return FALLBACK_BLOCK_STATE;
+        }
         return stateId;
     }
 
+    /**
+     * Map a 26.2 item registry id to one the legacy client understands: known mod replacements first, otherwise
+     * pass-through if {@code <= MAX_26_1_ITEM_ID}, else {@link Items#STONE}.
+     */
     public static int remapItem(int itemId) {
         int explicit = ITEM_REMAP.getOrDefault(itemId, itemId);
         if (explicit != itemId) {
