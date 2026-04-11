@@ -3,7 +3,14 @@
   "package": "dev.ohno.legacylink.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "HandshakeMixin"
+    "ClientboundAddEntityPacketMixin",
+    "HandshakeMixin",
+    "ConnectionSendMixin",
+    "ConfigurationFinishMixin",
+    "ItemStackOptionalCodecMixin",
+    "PacketEncoderMixin",
+    "ServerCommonConnectionAccessor",
+    "StatusPacketMixin"
   ],
   "injectors": {
     "defaultRequire": 1
