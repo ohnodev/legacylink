@@ -22,7 +22,8 @@ public final class RegistryRemapper {
     private static final Int2IntMap BLOCK_STATE_REMAP = new Int2IntOpenHashMap();
     private static final Int2IntMap ITEM_REMAP = new Int2IntOpenHashMap();
 
-    private static final int FALLBACK_BLOCK_STATE = 1; // stone default state
+    /** Server registry id for {@link Blocks#STONE} default state — written to legacy clients as the generic fallback. */
+    private static int fallbackBlockStateId = 1;
     private static final Item FALLBACK_ITEM = Items.STONE;
 
     public static void buildMappings() {
@@ -30,6 +31,7 @@ public final class RegistryRemapper {
         ITEM_REMAP.clear();
 
         int stoneStateId = Block.BLOCK_STATE_REGISTRY.getId(Blocks.STONE.defaultBlockState());
+        fallbackBlockStateId = stoneStateId;
 
         for (Block block : BuiltInRegistries.BLOCK) {
             Identifier blockId = BuiltInRegistries.BLOCK.getKey(block);
@@ -64,11 +66,11 @@ public final class RegistryRemapper {
             return explicit;
         }
         if (stateId > LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID) {
-            return FALLBACK_BLOCK_STATE;
+            return fallbackBlockStateId;
         }
         BlockState atId = Block.BLOCK_STATE_REGISTRY.byId(stateId);
         if (atId == null) {
-            return FALLBACK_BLOCK_STATE;
+            return fallbackBlockStateId;
         }
         return stateId;
     }

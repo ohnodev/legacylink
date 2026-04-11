@@ -23,6 +23,9 @@ import java.util.List;
 
 public final class LegacyChunkTranslator {
 
+    /** Hard cap so a corrupt buffer cannot loop forever (vanilla is on the order of tens of sections). */
+    private static final int MAX_CHUNK_SECTIONS = 1024;
+
     private static final Field CHUNK_BUFFER_FIELD;
     private static final Field CHUNK_BLOCK_ENTITIES_FIELD;
     private static final Field SECTION_BIOMES_FIELD;
@@ -69,17 +72,28 @@ public final class LegacyChunkTranslator {
         try {
             ClientboundLevelChunkPacketData chunkData = packet.getChunkData();
             FriendlyByteBuf in = chunkData.getReadBuffer();
-            int sectionCount = LegacyRuntimeContext.sectionCount();
 
-            List<LevelChunkSection> sections = new ArrayList<>(sectionCount);
+            /*
+             * Section count is per-dimension (e.g. overworld 24 vs nether 8). Using overworld's count for every
+             * chunk mis-aligns the buffer: the client then reads garbage palette ids (e.g. "No value with id 30209").
+             */
+            List<LevelChunkSection> sections = new ArrayList<>();
             int remappedStates = 0;
 
-            for (int i = 0; i < sectionCount; i++) {
+            int sectionIndex = 0;
+            while (in.readableBytes() > 0) {
+                if (sectionIndex >= MAX_CHUNK_SECTIONS) {
+                    throw new IllegalStateException(
+                            "[LegacyLink] Chunk remap: more than " + MAX_CHUNK_SECTIONS
+                                    + " sections in buffer for " + packet.getX() + "," + packet.getZ()
+                                    + " (readable=" + in.readableBytes() + ") — corrupt or unknown format?");
+                }
                 LevelChunkSection section = new LevelChunkSection(LegacyRuntimeContext.chunkContainerFactory());
                 section.read(in);
                 SectionRewriteResult rewritten = rewriteSectionStates(section);
                 remappedStates += rewritten.remappedStates();
                 sections.add(rewritten.section());
+                sectionIndex++;
             }
 
             FriendlyByteBuf out = new FriendlyByteBuf(Unpooled.buffer());

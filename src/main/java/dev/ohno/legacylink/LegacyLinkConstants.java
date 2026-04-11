@@ -7,11 +7,12 @@ public final class LegacyLinkConstants {
     public static final int PROTOCOL_26_1 = 775;
     public static final int PROTOCOL_26_2_SNAPSHOT = 1073742132;
     // Upper bounds for 26.1.x protocol registries; anything above is treated as 26.2-only on the wire.
-    // Block state ids must match the legacy client's {@code Block.BLOCK_STATE_REGISTRY} size. 26.1.2 crashes with
-    // {@code No value with id 30224} when chunks still carry 26.2-only palette entries, so the last valid id is 30223.
-    // Bump when Mojang extends 26.1.x without changing the 26.2 registry layout the same way.
+    // Block state ids in chunk palettes must be valid indices in the legacy client's {@code Block.BLOCK_STATE_REGISTRY}.
+    // 26.1.2 reports {@code No value with id 30209} when the registry has 30209 entries (valid indices {@code 0..30208});
+    // 26.2 assigns new states at 30209+ so they must be remapped before send. If a future 26.1.x release grows the
+    // registry, raise this inclusive ceiling (last valid id) to match that client.
     public static final int MAX_26_1_ITEM_ID = 1505;
-    public static final int MAX_26_1_BLOCKSTATE_ID = 30223;
+    public static final int MAX_26_1_BLOCKSTATE_ID = 30208;
 
     public static final Set<String> SULFUR_BLOCK_IDS = Set.of(
             "minecraft:sulfur",
