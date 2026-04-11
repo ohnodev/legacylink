@@ -76,6 +76,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.lang.reflect.Constructor;
 import java.util.Set;
 import java.lang.reflect.Field;
@@ -214,11 +215,24 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                 }
                 var h = ctx.pipeline().get(HandlerNames.PACKET_HANDLER);
                 Connection connection = h instanceof Connection c ? c : null;
-                for (int i = 0; i < flat.size(); i++) {
+                int total = flat.size();
+                AtomicInteger finished = new AtomicInteger(0);
+                for (int i = 0; i < total; i++) {
                     Packet<?> p = flat.get(i);
-                    boolean last = i == flat.size() - 1;
+                    ChannelPromise childPromise = ctx.newPromise();
+                    childPromise.addListener(f -> {
+                        try {
+                            if (!f.isSuccess()) {
+                                promise.tryFailure(f.cause());
+                            }
+                        } finally {
+                            if (finished.incrementAndGet() == total && !promise.isDone()) {
+                                promise.trySuccess();
+                            }
+                        }
+                    });
                     tracePostRewriteIfEnabled(connection, p);
-                    super.write(ctx, p, last ? promise : ctx.voidPromise());
+                    super.write(ctx, p, childPromise);
                 }
                 return;
             }
@@ -338,10 +352,10 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
          *
          * Then use the entity in the <b>legacy recipient's level</b> as authoritative when present, and reconcile
          * {@link #clientVisibleEntityTypeById} when it disagrees (stale prefetch after id reuse without a processed
-         * remove, or wrong global {@link LegacyRuntimeContext#findEntity} ordering across dimensions).
+         * remove).
          *
          * If the entity is not yet in that level (metadata before add-entity in the same bundle), fall back to the
-         * prefetch map, then {@link LegacyRuntimeContext#findEntity}. Sulfur cubes map to slime for the client.
+         * spawn prefetch map only — no blocking global lookup on the Netty thread. Sulfur cubes map to slime for the client.
          */
         MinecraftServer server = LegacyRuntimeContext.server();
         if (server != null) {
@@ -362,10 +376,6 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         }
         if (fromSpawn != null) {
             return fromSpawn;
-        }
-        Entity entity = LegacyRuntimeContext.findEntity(entityId);
-        if (entity != null) {
-            return toClientVisibleEntityType(entity.getType());
         }
         return null;
     }
