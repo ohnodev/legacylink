@@ -345,7 +345,11 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         return entity == null ? null : entity.getType();
     }
 
-    private EntityType<?> resolveMetadataEntityType(int entityId) {
+    /**
+     * @param fromRecipientWorld result of {@link #entityForLegacyRecipient(int)} for {@code entityId}; pass the same
+     * instance for all uses in one handler pass so the world probe and reconciled type do not drift mid-call.
+     */
+    private EntityType<?> resolveMetadataEntityType(int entityId, @Nullable Entity fromRecipientWorld) {
         /*
          * Prefer an online ServerPlayer match first (wrong non-player hints can corrupt tail trimming for the
          * local player).
@@ -366,7 +370,6 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             }
         }
         EntityType<?> fromSpawn = clientVisibleEntityTypeById.get(entityId);
-        Entity fromRecipientWorld = entityForLegacyRecipient(entityId);
         if (fromRecipientWorld != null) {
             EntityType<?> worldType = toClientVisibleEntityType(fromRecipientWorld.getType());
             if (fromSpawn != null && fromSpawn != worldType) {
@@ -554,11 +557,13 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             if (LegacyPacketMapTrace.enabled()
                     && boundConnection != null
                     && LegacyTracker.isLegacy(boundConnection)) {
+                Entity recipient = entityForLegacyRecipient(entityId);
+                EntityType<?> clientType = resolveMetadataEntityType(entityId, recipient);
                 LegacyPacketMapTrace.logEntityDataContext(
                         boundConnection,
                         entityId,
-                        resolveMetadataEntityType(entityId),
-                        entityTypeOf(entityForLegacyRecipient(entityId)),
+                        clientType,
+                        entityTypeOf(recipient),
                         clientVisibleEntityTypeById.get(entityId),
                         true
                 );
@@ -567,7 +572,10 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             return new ClientboundSetEntityDataPacket(entityId, List.of());
         }
         List<net.minecraft.network.syncher.SynchedEntityData.DataValue<?>> items = packedItems;
-        EntityType<?> clientType = resolveMetadataEntityType(entityId);
+        Entity recipient = entityForLegacyRecipient(entityId);
+        EntityType<?> clientType = resolveMetadataEntityType(entityId, recipient);
+        EntityType<?> prefetchVisibleType = clientVisibleEntityTypeById.get(entityId);
+        EntityType<?> recipientEntityType = entityTypeOf(recipient);
         if (LegacyPacketMapTrace.enabled()
                 && boundConnection != null
                 && LegacyTracker.isLegacy(boundConnection)) {
@@ -575,8 +583,8 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                     boundConnection,
                     entityId,
                     clientType,
-                    entityTypeOf(entityForLegacyRecipient(entityId)),
-                    clientVisibleEntityTypeById.get(entityId),
+                    recipientEntityType,
+                    prefetchVisibleType,
                     false
             );
         }
@@ -599,8 +607,8 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         var villagerRewritten = VillagerEntityData2661.rewriteIfNeeded(
                 entityId,
                 items,
-                clientVisibleEntityTypeById.get(entityId),
-                entityTypeOf(entityForLegacyRecipient(entityId)));
+                prefetchVisibleType,
+                recipientEntityType);
         if (villagerRewritten != null) {
             items = villagerRewritten;
         }
