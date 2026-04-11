@@ -162,6 +162,10 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     @Override
     public void write(ChannelHandlerContext ctx, Object msg, ChannelPromise promise) throws Exception {
         Connection encodeConn = ctx.pipeline().get(HandlerNames.PACKET_HANDLER) instanceof Connection c ? c : null;
+        if (encodeConn == null || !LegacyTracker.isLegacy(encodeConn)) {
+            ctx.write(msg, promise);
+            return;
+        }
         try (LegacyOutboundEncoding.Scope ignored = LegacyOutboundEncoding.enterScoped(encodeConn)) {
             writeTranslated(ctx, msg, promise);
         }
@@ -720,8 +724,24 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
             Map<Identifier, IntList> tagMap =
                     (Map<Identifier, IntList>) TAGS_NETWORK_PAYLOAD_TAGS_FIELD.get(payload);
-            Map<Identifier, IntList> newItemTagMap = new HashMap<>(tagMap.size());
             boolean anyChanged = false;
+            for (Map.Entry<Identifier, IntList> entry : tagMap.entrySet()) {
+                IntList ids = entry.getValue();
+                for (int i = 0; i < ids.size(); i++) {
+                    int oldId = ids.getInt(i);
+                    if (ItemRewriter.remapItemIdStrict(oldId) != oldId) {
+                        anyChanged = true;
+                        break;
+                    }
+                }
+                if (anyChanged) {
+                    break;
+                }
+            }
+            if (!anyChanged) {
+                return packet;
+            }
+            Map<Identifier, IntList> newItemTagMap = new HashMap<>(tagMap.size());
             for (Map.Entry<Identifier, IntList> entry : tagMap.entrySet()) {
                 IntList ids = entry.getValue();
                 IntArrayList rewritten = new IntArrayList(ids.size());
@@ -734,15 +754,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                         changedForEntry = true;
                     }
                 }
-                if (changedForEntry) {
-                    anyChanged = true;
-                    newItemTagMap.put(entry.getKey(), rewritten);
-                } else {
-                    newItemTagMap.put(entry.getKey(), new IntArrayList(ids));
-                }
-            }
-            if (!anyChanged) {
-                return packet;
+                newItemTagMap.put(entry.getKey(), changedForEntry ? rewritten : ids);
             }
             TagNetworkSerialization.NetworkPayload newPayload = NETWORK_PAYLOAD_CTOR.newInstance(newItemTagMap);
             var newTags = new HashMap<>(tags);
