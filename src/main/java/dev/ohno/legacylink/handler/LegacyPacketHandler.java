@@ -88,6 +88,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private static final Constructor<ClientboundUpdateAttributesPacket> UPDATE_ATTRIBUTES_REBUILD_CTOR;
     private static final Field TAGS_NETWORK_PAYLOAD_TAGS_FIELD;
+    private static final Constructor<TagNetworkSerialization.NetworkPayload> NETWORK_PAYLOAD_CTOR;
     private static final Field RECIPE_ITEMS_FIELD;
     private static final Constructor<RecipePropertySet> RECIPE_PROP_SET_CTOR;
 
@@ -101,6 +102,11 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             TAGS_NETWORK_PAYLOAD_TAGS_FIELD =
                     TagNetworkSerialization.NetworkPayload.class.getDeclaredField("tags");
             TAGS_NETWORK_PAYLOAD_TAGS_FIELD.setAccessible(true);
+
+            Constructor<TagNetworkSerialization.NetworkPayload> payloadCtor =
+                    TagNetworkSerialization.NetworkPayload.class.getDeclaredConstructor(Map.class);
+            payloadCtor.setAccessible(true);
+            NETWORK_PAYLOAD_CTOR = payloadCtor;
 
             RECIPE_ITEMS_FIELD = RecipePropertySet.class.getDeclaredField("items");
             RECIPE_ITEMS_FIELD.setAccessible(true);
@@ -706,15 +712,16 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     public ClientboundUpdateTagsPacket remapUpdateTags(ClientboundUpdateTagsPacket packet) {
         try {
             var tags = packet.getTags();
-            var itemRegistryKey = net.minecraft.core.registries.Registries.ITEM;
-            var payload = tags.get(itemRegistryKey);
+            var itemRegistryKey = Registries.ITEM;
+            TagNetworkSerialization.NetworkPayload payload = tags.get(itemRegistryKey);
             if (payload == null) {
                 return packet;
             }
 
             Map<Identifier, IntList> tagMap =
                     (Map<Identifier, IntList>) TAGS_NETWORK_PAYLOAD_TAGS_FIELD.get(payload);
-            boolean changed = false;
+            Map<Identifier, IntList> newItemTagMap = new HashMap<>(tagMap.size());
+            boolean anyChanged = false;
             for (Map.Entry<Identifier, IntList> entry : tagMap.entrySet()) {
                 IntList ids = entry.getValue();
                 IntArrayList rewritten = new IntArrayList(ids.size());
@@ -728,14 +735,20 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                     }
                 }
                 if (changedForEntry) {
-                    entry.setValue(rewritten);
-                    changed = true;
+                    anyChanged = true;
+                    newItemTagMap.put(entry.getKey(), rewritten);
+                } else {
+                    newItemTagMap.put(entry.getKey(), new IntArrayList(ids));
                 }
             }
-            if (changed) {
-                LegacyLinkMod.LOGGER.debug("[LegacyLink] Remapped item tag payload IDs for legacy client");
+            if (!anyChanged) {
+                return packet;
             }
-            return packet;
+            TagNetworkSerialization.NetworkPayload newPayload = NETWORK_PAYLOAD_CTOR.newInstance(newItemTagMap);
+            var newTags = new HashMap<>(tags);
+            newTags.put(itemRegistryKey, newPayload);
+            LegacyLinkMod.LOGGER.debug("[LegacyLink] Remapped item tag payload IDs for legacy client (new packet)");
+            return new ClientboundUpdateTagsPacket(newTags);
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("[LegacyLink] remapUpdateTags reflection failed", e);
         }
@@ -768,6 +781,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             return;
         }
         clientVisibleEntityTypeById.put(id, type);
+        remappedLegacyEntityIds.remove(id);
     }
 
     public ClientboundAddEntityPacket remapEntitySpawn(ClientboundAddEntityPacket packet) {

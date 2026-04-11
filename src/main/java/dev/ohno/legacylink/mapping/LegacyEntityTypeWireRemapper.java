@@ -17,7 +17,7 @@ import java.util.List;
  */
 public final class LegacyEntityTypeWireRemapper {
 
-    private static List<Identifier> legacySyncOrder = List.of();
+    private static volatile List<Identifier> legacySyncOrder = List.of();
 
     private LegacyEntityTypeWireRemapper() {}
 
@@ -48,7 +48,8 @@ public final class LegacyEntityTypeWireRemapper {
                     "[LegacyLink] legacyNetworkId: EntityType has no registry key (" + type
                             + "). Filtered or synthetic types must be remapped to a legacy substitute before encoding.");
         }
-        int idx = legacySyncOrder.indexOf(key);
+        List<Identifier> order = legacySyncOrder;
+        int idx = order.indexOf(key);
         if (idx < 0) {
             throw new IllegalStateException(
                     "[LegacyLink] legacyNetworkId: EntityType " + key + " (" + type
