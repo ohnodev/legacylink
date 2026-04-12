@@ -35,15 +35,16 @@ LegacyLink is a **server-side only** Fabric mod. Install these on the **dedicate
 | Requirement | Role | Version this repo is built against |
 |-------------|------|-------------------------------------|
 | **Java** | JVM for the server | **25+** (see `build.gradle.kts` toolchain) |
-| **Minecraft** | Game / protocol | **`26.2-snapshot-1`** (`gradle.properties` → `minecraft_version`) |
+| **Minecraft** | Game / protocol | **`26.2-snapshot-2`** (`gradle.properties` → `minecraft_version`) |
 | **Fabric Loader** | Mod bootstrap | **`>= 0.19.1`** (`fabricloader` in `fabric.mod.json`) |
 | **Fabric API** | Library jar (`fabric-api` on Modrinth / Maven). Used at runtime (e.g. `ServerLifecycleEvents`). | **`>= 0.145.5`** — compile against **`0.145.5+26.2`** (`gradle.properties` → `fabric_version`). Use the **Fabric API build that matches your exact 26.2 snapshot** if yours differs. |
+| **MixinExtras** | Embedded in the LegacyLink jar (jar-in-jar). Registers `@WrapMethod` and related injectors at preLaunch; **not** a separate mod to install. | **0.5.3** (`build.gradle.kts`, `io.github.llamalad7:mixinextras-fabric`) |
 
 Maven coordinates for the Fabric API artifact (for reference only):
 
 - `net.fabricmc.fabric-api:fabric-api` — version string like `0.145.5+26.2` from [Fabric Maven](https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/).
 
-There are **no other** bundled libraries: no ViaVersion, no PacketEvents, no optional mods required.
+Aside from **MixinExtras** (above), there are **no other** bundled libraries: no ViaVersion, no PacketEvents, no optional mods required.
 
 ## Requirements & installation
 
