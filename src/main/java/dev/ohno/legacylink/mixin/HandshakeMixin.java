@@ -30,9 +30,7 @@ public abstract class HandshakeMixin {
             LegacyLinkMod.LOGGER.info("[LegacyLink] Accepting 26.1 client from {}",
                     this.connection.getRemoteAddress());
 
-            LegacyTracker.markLegacy(this.connection);
-            LegacyPacketHandler.install(this.connection);
-            PacketEventsVersionBridge.force26_2IfPresent(this.connection);
+            applyLegacySetup();
 
             this.connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
             this.connection.setupInboundProtocol(LoginProtocols.SERVERBOUND,
@@ -44,9 +42,13 @@ public abstract class HandshakeMixin {
     @Inject(method = "handleIntention", at = @At("HEAD"))
     private void legacylink$markLegacyOnStatusPing(ClientIntentionPacket packet, CallbackInfo ci) {
         if (packet.protocolVersion() == LegacyLinkConstants.PROTOCOL_26_1) {
-            LegacyTracker.markLegacy(this.connection);
-            LegacyPacketHandler.install(this.connection);
-            PacketEventsVersionBridge.force26_2IfPresent(this.connection);
+            applyLegacySetup();
         }
+    }
+
+    private void applyLegacySetup() {
+        LegacyTracker.markLegacy(this.connection);
+        LegacyPacketHandler.install(this.connection);
+        PacketEventsVersionBridge.force26_2IfPresent(this.connection);
     }
 }

@@ -36,8 +36,16 @@ public final class PacketEventsVersionBridge {
             }
 
             Class<?> clientVersionClass = Class.forName("com.github.retrooper.packetevents.protocol.player.ClientVersion");
-            @SuppressWarnings({"unchecked", "rawtypes"})
-            Object normalizedVersion = Enum.valueOf((Class<? extends Enum>) clientVersionClass.asSubclass(Enum.class), "V_26_2");
+            Object normalizedVersion;
+            try {
+                @SuppressWarnings({"unchecked", "rawtypes"})
+                Object version = Enum.valueOf((Class<? extends Enum>) clientVersionClass.asSubclass(Enum.class), "V_26_2");
+                normalizedVersion = version;
+            } catch (IllegalArgumentException e) {
+                // PacketEvents present, but this build does not expose V_26_2.
+                logUnavailableOnce();
+                return;
+            }
 
             Method setClientVersion = user.getClass().getMethod("setClientVersion", clientVersionClass);
             setClientVersion.invoke(user, normalizedVersion);
