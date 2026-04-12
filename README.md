@@ -24,20 +24,37 @@ Lightweight **26.2 → 26.1** protocol translation for **Fabric servers**. Lets 
 
 ## Downloads
 
-- **Modrinth:** listing in progress (use **prebuilt jar** below or GitHub until live)
-- **GitHub Releases:** coming soon
-- **Prebuilt (this repo):** `prebuilt/legacylink-0.1.0.jar` — see [Prebuilt artifact](#prebuilt-artifact-in-this-repo)
+- **[GitHub Releases](https://github.com/ohnodev/legacylink/releases)** — primary jar for each tagged version (attach the same file to Modrinth).
+- **Prebuilt in repo:** [`prebuilt/legacylink-0.1.0.jar`](prebuilt/legacylink-0.1.0.jar) — convenience copy of the v0.1.0 build; checksum below.
+- **Modrinth:** submit using the release jar + the dependency metadata in this README and in `fabric.mod.json`.
+
+## Dependencies (libraries & runtime)
+
+LegacyLink is a **server-side only** Fabric mod. Install these on the **dedicated server** (clients do not install LegacyLink).
+
+| Requirement | Role | Version this repo is built against |
+|-------------|------|-------------------------------------|
+| **Java** | JVM for the server | **25+** (see `build.gradle.kts` toolchain) |
+| **Minecraft** | Game / protocol | **`26.2-snapshot-1`** (`gradle.properties` → `minecraft_version`) |
+| **Fabric Loader** | Mod bootstrap | **`>= 0.19.1`** (`fabricloader` in `fabric.mod.json`) |
+| **Fabric API** | Library jar (`fabric-api` on Modrinth / Maven). Used at runtime (e.g. `ServerLifecycleEvents`). | **`>= 0.145.5`** — compile against **`0.145.5+26.2`** (`gradle.properties` → `fabric_version`). Use the **Fabric API build that matches your exact 26.2 snapshot** if yours differs. |
+
+Maven coordinates for the Fabric API artifact (for reference only):
+
+- `net.fabricmc.fabric-api:fabric-api` — version string like `0.145.5+26.2` from [Fabric Maven](https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/).
+
+There are **no other** bundled libraries: no ViaVersion, no PacketEvents, no optional mods required.
 
 ## Requirements & installation
 
-- **Java 25+**
-- **Fabric Loader** 0.19.1+
-- **Fabric API** matching your server line (e.g. `0.145.5+26.2` or `0.145.5+26.2-snapshot-1` for snapshot servers)
-- **Minecraft server** 26.2-snapshot (see `gradle.properties` `minecraft_version` in this repo for the exact compile target)
-
-Copy the jar into `mods/` and restart:
+1. Install **Fabric Loader** on the server.
+2. Put **`fabric-api-<version>.jar`** in `mods/` (same line as your Minecraft build).
+3. Put **`legacylink-0.1.0.jar`** in `mods/`.
+4. Run the server with **Java 25+**.
 
 ```bash
+cp build/libs/legacylink-0.1.0.jar /path/to/server/mods/
+# or the prebuilt copy:
 cp prebuilt/legacylink-0.1.0.jar /path/to/server/mods/
 ```
 
@@ -109,7 +126,7 @@ This repository includes a **prebuilt** Fabric mod jar under `prebuilt/` for dir
 Current file:
 
 - `prebuilt/legacylink-0.1.0.jar`
-- SHA-256: `15a9fb574ea1b06f3fa6e240055d9271396c989da13fce99a26509c32de4f0c7`
+- SHA-256: `44a5d50e5477b52b1d2715d581dce12284b9748f6c5b09dfd9788f4631b7c05d`
 
 Verify:
 
