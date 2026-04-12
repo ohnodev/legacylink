@@ -4,6 +4,7 @@ import dev.ohno.legacylink.LegacyLinkConstants;
 import dev.ohno.legacylink.LegacyLinkMod;
 import dev.ohno.legacylink.connection.LegacyTracker;
 import dev.ohno.legacylink.handler.LegacyPacketHandler;
+import dev.ohno.legacylink.integration.PacketEventsVersionBridge;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
 import net.minecraft.network.protocol.login.LoginProtocols;
@@ -31,6 +32,7 @@ public abstract class HandshakeMixin {
 
             LegacyTracker.markLegacy(this.connection);
             LegacyPacketHandler.install(this.connection);
+            PacketEventsVersionBridge.force26_2IfPresent(this.connection);
 
             this.connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
             this.connection.setupInboundProtocol(LoginProtocols.SERVERBOUND,
@@ -44,6 +46,7 @@ public abstract class HandshakeMixin {
         if (packet.protocolVersion() == LegacyLinkConstants.PROTOCOL_26_1) {
             LegacyTracker.markLegacy(this.connection);
             LegacyPacketHandler.install(this.connection);
+            PacketEventsVersionBridge.force26_2IfPresent(this.connection);
         }
     }
 }
