@@ -1,8 +1,7 @@
 package dev.ohno.legacylink.handler.rewrite;
 
-import dev.ohno.legacylink.mapping.LegacyItemIdTable;
+import dev.ohno.legacylink.mapping.RegistryRemapper;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.core.Holder;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemStackTemplate;
@@ -13,21 +12,15 @@ import java.util.List;
 
 /**
  * Packet-facing item rewrites for legacy clients. Numeric ids are canonicalized through
- * {@link LegacyItemIdTable} round-trip translation; stacks then pass through
+ * {@link RegistryRemapper#remapItem(int)} so packet rewrites and codec remaps share one source of truth; stacks then pass through
  * {@link ItemComponentSanitizer} to drop 26.2-only components (e.g. sulfur cube content) and rewrite nested stacks
  * in containers, bundles, and charged projectiles.
  */
 public final class ItemRewriter {
 
     public static Item remapItemToLegacySafe(Item item) {
-        /*
-         * Canonicalize through the same legacy wire-id table used by optional-stack codecs.
-         * This keeps packet-level rewrites and codec-level rewrites consistent so inventory
-         * updates do not oscillate between two item interpretations for the same slot.
-         */
         int serverId = Item.getId(item);
-        int legacyWireId = LegacyItemIdTable.toLegacyId(serverId);
-        int canonicalServerId = LegacyItemIdTable.serverItemIdFromLegacyWire(legacyWireId);
+        int canonicalServerId = RegistryRemapper.remapItem(serverId);
         Item mapped = BuiltInRegistries.ITEM.byId(canonicalServerId);
         return mapped != null ? mapped : Items.STONE;
     }
@@ -70,8 +63,7 @@ public final class ItemRewriter {
     }
 
     public static int remapItemIdStrict(int itemId) {
-        int legacyWireId = LegacyItemIdTable.toLegacyId(itemId);
-        return LegacyItemIdTable.serverItemIdFromLegacyWire(legacyWireId);
+        return RegistryRemapper.remapItem(itemId);
     }
 
     private ItemRewriter() {}
