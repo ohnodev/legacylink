@@ -1,7 +1,10 @@
 package dev.ohno.legacylink.mixin;
 
 import dev.ohno.legacylink.connection.LegacyTracker;
+import dev.ohno.legacylink.encoding.LegacyOutboundEncoding;
 import dev.ohno.legacylink.protocol.LegacyUpdateAttributesWirePatcher;
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import net.minecraft.network.Connection;
@@ -47,5 +50,27 @@ public abstract class PacketEncoderMixin<T extends PacketListener> {
             return;
         }
         LegacyUpdateAttributesWirePatcher.rewriteBuffer(output);
+    }
+
+    /**
+     * Ensure codec-level legacy remaps (e.g. ItemStackTemplate in update_advancements) run with an active
+     * outbound connection context during the actual PacketEncoder.encode call.
+     */
+    @WrapMethod(method = "encode")
+    private void legacylink$encodeWithLegacyContext(
+            ChannelHandlerContext ctx,
+            Packet<?> packet,
+            ByteBuf output,
+            Operation<Void> original
+    ) throws Exception {
+        Object handler = ctx.pipeline().get(HandlerNames.PACKET_HANDLER);
+        Connection encodeConn = handler instanceof Connection c ? c : null;
+        if (encodeConn == null || !LegacyTracker.isLegacy(encodeConn)) {
+            original.call(ctx, packet, output);
+            return;
+        }
+        try (LegacyOutboundEncoding.Scope ignored = LegacyOutboundEncoding.enterScoped(encodeConn)) {
+            original.call(ctx, packet, output);
+        }
     }
 }
