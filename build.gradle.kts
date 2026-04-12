@@ -8,7 +8,7 @@ val fabric_version: String by project
 val loader_version: String by project
 
 group = "dev.ohno"
-version = "0.1.0"
+version = "0.1.1"
 
 repositories {
     maven("https://maven.fabricmc.net/")
@@ -19,6 +19,9 @@ dependencies {
     minecraft("com.mojang:minecraft:$minecraft_version")
     implementation("net.fabricmc.fabric-api:fabric-api:$fabric_version")
     implementation("net.fabricmc:fabric-loader:$loader_version")
+    val mixinExtras = "io.github.llamalad7:mixinextras-fabric:0.5.3"
+    annotationProcessor(mixinExtras)
+    implementation(include(mixinExtras)!!)
 }
 
 java {

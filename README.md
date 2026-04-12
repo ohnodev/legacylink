@@ -25,7 +25,7 @@ Lightweight **26.2 → 26.1** protocol translation for **Fabric servers**. Lets 
 ## Downloads
 
 - **[GitHub Releases](https://github.com/ohnodev/legacylink/releases)** — primary jar for each tagged version (attach the same file to Modrinth).
-- **Prebuilt in repo:** [`prebuilt/legacylink-0.1.0.jar`](prebuilt/legacylink-0.1.0.jar) — convenience copy of the v0.1.0 build; checksum below.
+- **Prebuilt in repo:** [`prebuilt/legacylink-0.1.1.jar`](prebuilt/legacylink-0.1.1.jar) — convenience copy of the current `build.gradle.kts` version; checksum below.
 - **Modrinth:** submit using the release jar + the dependency metadata in this README and in `fabric.mod.json`.
 
 ## Dependencies (libraries & runtime)
@@ -35,27 +35,28 @@ LegacyLink is a **server-side only** Fabric mod. Install these on the **dedicate
 | Requirement | Role | Version this repo is built against |
 |-------------|------|-------------------------------------|
 | **Java** | JVM for the server | **25+** (see `build.gradle.kts` toolchain) |
-| **Minecraft** | Game / protocol | **`26.2-snapshot-1`** (`gradle.properties` → `minecraft_version`) |
+| **Minecraft** | Game / protocol | **`26.2-snapshot-2`** (`gradle.properties` → `minecraft_version`) |
 | **Fabric Loader** | Mod bootstrap | **`>= 0.19.1`** (`fabricloader` in `fabric.mod.json`) |
 | **Fabric API** | Library jar (`fabric-api` on Modrinth / Maven). Used at runtime (e.g. `ServerLifecycleEvents`). | **`>= 0.145.5`** — compile against **`0.145.5+26.2`** (`gradle.properties` → `fabric_version`). Use the **Fabric API build that matches your exact 26.2 snapshot** if yours differs. |
+| **MixinExtras** | Embedded in the LegacyLink jar (jar-in-jar). Registers `@WrapMethod` and related injectors at preLaunch; **not** a separate mod to install. | **0.5.3** (`build.gradle.kts`, `io.github.llamalad7:mixinextras-fabric`) |
 
 Maven coordinates for the Fabric API artifact (for reference only):
 
 - `net.fabricmc.fabric-api:fabric-api` — version string like `0.145.5+26.2` from [Fabric Maven](https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/).
 
-There are **no other** bundled libraries: no ViaVersion, no PacketEvents, no optional mods required.
+Aside from **MixinExtras** (above), there are **no other** bundled libraries: no ViaVersion, no PacketEvents, no optional mods required.
 
 ## Requirements & installation
 
 1. Install **Fabric Loader** on the server.
 2. Put **`fabric-api-<version>.jar`** in `mods/` (same line as your Minecraft build).
-3. Put **`legacylink-0.1.0.jar`** in `mods/`.
+3. Put **`legacylink-0.1.1.jar`** in `mods/` (or the version you built).
 4. Run the server with **Java 25+**.
 
 ```bash
-cp build/libs/legacylink-0.1.0.jar /path/to/server/mods/
+cp build/libs/legacylink-0.1.1.jar /path/to/server/mods/
 # or the prebuilt copy:
-cp prebuilt/legacylink-0.1.0.jar /path/to/server/mods/
+cp prebuilt/legacylink-0.1.1.jar /path/to/server/mods/
 ```
 
 ## Version policy
@@ -75,7 +76,7 @@ cp prebuilt/legacylink-0.1.0.jar /path/to/server/mods/
 ### Known limitations (v0.1)
 
 - **Block state ID ceiling** (`MAX_26_1_BLOCKSTATE_ID` in `LegacyLinkConstants`) is the **inclusive** last index the legacy client accepts (`0..MAX`). Pinned to **26.1.1** (`30207`) so 26.2 palette IDs remap safely; setting it too high can crash legacy clients in `LinearPalette.read`.
-- **Item stacks (outbound):** remapped/sanitized on container, cursor, inventory, advancements (icons), recipes/tags; wire IDs via `LegacyItemIdTable` + `ItemStackOptionalCodecMixin`. **Inbound** client→server item payloads are not rewritten.
+- **Item stacks (wire):** 26.2↔26.1 numeric item ids for legacy connections via `LegacyItemIdTable` + `ItemStackOptionalCodecMixin` (optional stacks, including creative untrusted codec) and `HashedStackActualItemMixin` (container clicks). Inbound decode is scoped to `PacketDecoder#decode` (`PacketDecoderMixin`).
 
 ## Configuration
 
@@ -117,7 +118,7 @@ export JAVA_HOME="/path/to/java25"
 ./gradlew build -x test
 ```
 
-Output: `build/libs/legacylink-0.1.0.jar`
+Output: `build/libs/legacylink-0.1.1.jar`
 
 ## Prebuilt artifact in this repo
 
@@ -125,13 +126,13 @@ This repository includes a **prebuilt** Fabric mod jar under `prebuilt/` for dir
 
 Current file:
 
-- `prebuilt/legacylink-0.1.0.jar`
-- SHA-256: `44a5d50e5477b52b1d2715d581dce12284b9748f6c5b09dfd9788f4631b7c05d`
+- `prebuilt/legacylink-0.1.1.jar`
+- SHA-256: `94bf9f11fbb54bedd574d5cbd2d6f38ee5630db13a924fca0574204e58134bab`
 
 Verify:
 
 ```bash
-shasum -a 256 prebuilt/legacylink-0.1.0.jar
+shasum -a 256 prebuilt/legacylink-0.1.1.jar
 ```
 
 Update this checksum in the README whenever the prebuilt jar is replaced.

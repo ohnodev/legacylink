@@ -7,6 +7,9 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Static 26.2 → 26.1 item wire-ID table, built once from {@link BuiltInRegistries#ITEM} iteration order.
  * <p>
@@ -16,11 +19,17 @@ import net.minecraft.world.item.Items;
  * <p>
  * Via pattern: iterate the full 26.2 registry, skip 26.2-only entries, assign sequential legacy IDs
  * to everything else. Wire-level encoding then emits the legacy ID instead of the server's native one.
+ * <p>
+ * The inverse map (26.1 wire id → 26.2 server numeric id) is built for inbound decode; collisions from
+ * multiple server items sharing one legacy id (e.g. stone substitution) resolve in favor of {@link Items#STONE}.
  */
 public final class LegacyItemIdTable {
 
     private static int[] toLegacy = new int[0];
+    /** {@code legacyToServer[legacyWireId]} = server {@link Item#getId(Item)}; length {@link #legacyCount}. */
+    private static int[] legacyToServer = new int[0];
     private static int legacyStoneId = 1;
+    private static int stoneServerItemId = 1;
     private static int legacyCount = 0;
 
     private LegacyItemIdTable() {}
@@ -29,7 +38,7 @@ public final class LegacyItemIdTable {
         int size = BuiltInRegistries.ITEM.size();
         int[] table = new int[size];
         int nextLegacyId = 0;
-        int stoneServerItemId = Item.getId(Items.STONE);
+        stoneServerItemId = Item.getId(Items.STONE);
 
         for (Item item : BuiltInRegistries.ITEM) {
             int serverId = Item.getId(item);
@@ -55,6 +64,8 @@ public final class LegacyItemIdTable {
         legacyStoneId = stoneLegacy;
         legacyCount = nextLegacyId;
 
+        legacyToServer = buildLegacyToServerInverse(table, nextLegacyId, stoneServerItemId);
+
         LegacyLinkMod.LOGGER.info(
                 "[LegacyLink] Item wire-ID table built: {} server items → {} legacy IDs (expected legacy max {})",
                 size, nextLegacyId, LegacyLinkConstants.MAX_26_1_ITEM_ID);
@@ -64,6 +75,39 @@ public final class LegacyItemIdTable {
                     "[LegacyLink] Legacy item count {} does not match expected {} — check 26.2-only item detection",
                     nextLegacyId, LegacyLinkConstants.MAX_26_1_ITEM_ID + 1);
         }
+    }
+
+    private static int[] buildLegacyToServerInverse(int[] toLegacyTable, int legacySize, int stoneServerId) {
+        @SuppressWarnings("unchecked")
+        List<Integer>[] buckets = new List[legacySize];
+        for (int serverId = 0; serverId < toLegacyTable.length; serverId++) {
+            int leg = toLegacyTable[serverId];
+            if (leg < 0 || leg >= legacySize) {
+                continue;
+            }
+            if (buckets[leg] == null) {
+                buckets[leg] = new ArrayList<>();
+            }
+            buckets[leg].add(serverId);
+        }
+        int[] inverse = new int[legacySize];
+        for (int leg = 0; leg < legacySize; leg++) {
+            List<Integer> bucket = buckets[leg];
+            if (bucket == null || bucket.isEmpty()) {
+                inverse[leg] = stoneServerId;
+                continue;
+            }
+            if (bucket.size() == 1) {
+                inverse[leg] = bucket.getFirst();
+                continue;
+            }
+            int chosen = bucket.getFirst();
+            if (bucket.contains(stoneServerId)) {
+                chosen = stoneServerId;
+            }
+            inverse[leg] = chosen;
+        }
+        return inverse;
     }
 
     /**
@@ -79,6 +123,17 @@ public final class LegacyItemIdTable {
 
     public static int legacyItemCount() {
         return legacyCount;
+    }
+
+    /**
+     * Map a 26.1 client item wire id to the 26.2 server's numeric item id for {@link BuiltInRegistries#ITEM}.
+     */
+    public static int serverItemIdFromLegacyWire(int legacyWireId) {
+        int[] inv = legacyToServer;
+        if (legacyWireId < 0 || legacyWireId >= inv.length) {
+            return stoneServerItemId;
+        }
+        return inv[legacyWireId];
     }
 
     private static boolean is26_2Only(Item item) {
