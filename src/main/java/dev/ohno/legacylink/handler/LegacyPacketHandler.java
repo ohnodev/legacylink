@@ -16,6 +16,7 @@ import dev.ohno.legacylink.debug.SpawnPacketTrace;
 import dev.ohno.legacylink.handler.rewrite.AdvancementRewriter;
 import dev.ohno.legacylink.handler.rewrite.BlockStatePacketRewriter;
 import dev.ohno.legacylink.handler.rewrite.CubeMobEntityData2661;
+import dev.ohno.legacylink.handler.rewrite.RecipeBookAddRewriter;
 import dev.ohno.legacylink.handler.rewrite.Vanilla261EntityMetadataTailTrim2661;
 import dev.ohno.legacylink.handler.rewrite.VillagerEntityData2661;
 import dev.ohno.legacylink.handler.rewrite.ItemRewriter;
@@ -51,6 +52,7 @@ import net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetPlayerInventoryPacket;
+import net.minecraft.network.protocol.game.ClientboundRecipeBookAddPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket;
@@ -334,6 +336,9 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         }
         if (msg instanceof ClientboundUpdateRecipesPacket recipesPacket) {
             return remapUpdateRecipes(recipesPacket);
+        }
+        if (msg instanceof ClientboundRecipeBookAddPacket recipeBookAddPacket) {
+            return remapRecipeBookAdd(recipeBookAddPacket);
         }
         if (msg instanceof ClientboundUpdateTagsPacket tagsPacket) {
             return remapUpdateTags(tagsPacket);
@@ -728,6 +733,10 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("[LegacyLink] remapUpdateRecipes reflection failed", e);
         }
+    }
+
+    public ClientboundRecipeBookAddPacket remapRecipeBookAdd(ClientboundRecipeBookAddPacket packet) {
+        return RecipeBookAddRewriter.rewrite(packet);
     }
 
     @SuppressWarnings("unchecked")
