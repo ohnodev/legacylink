@@ -127,7 +127,7 @@ This repository includes a **prebuilt** Fabric mod jar under `prebuilt/` for dir
 Current file:
 
 - `prebuilt/legacylink-0.1.1.jar`
-- SHA-256: `c6bb0b01cb0675231938e8a62c90aaf88c6bb5fbce289e8992f93261fe57caa4`
+- SHA-256: `bb0c95bb9d4f3f91caab249df9ee20ea4acfb3f7ca2f6ca236bd319a584aaea2`
 
 Verify:
 
