@@ -19,6 +19,19 @@ public final class LegacyItemStackWireCodec {
 
     private LegacyItemStackWireCodec() {}
 
+    /**
+     * Resolve a 26.1 client item wire id to a server {@link Item} holder, using the same remap and
+     * {@link Items#STONE} fallback as optional-stack decode.
+     */
+    public static Holder<Item> holderFromLegacyWireId(int legacyWireId) {
+        int serverId = LegacyItemIdTable.serverItemIdFromLegacyWire(legacyWireId);
+        Item item = BuiltInRegistries.ITEM.byId(serverId);
+        if (item == null) {
+            item = Items.STONE;
+        }
+        return item.builtInRegistryHolder();
+    }
+
     public static ItemStack decodeOptional(
             RegistryFriendlyByteBuf input,
             StreamCodec<RegistryFriendlyByteBuf, DataComponentPatch> patchCodec,
@@ -33,12 +46,7 @@ public final class LegacyItemStackWireCodec {
             return ItemStack.EMPTY;
         }
         int legacyWireId = input.readVarInt();
-        int serverId = LegacyItemIdTable.serverItemIdFromLegacyWire(legacyWireId);
-        Item item = BuiltInRegistries.ITEM.byId(serverId);
-        if (item == null) {
-            item = Items.STONE;
-        }
-        Holder<Item> holder = item.builtInRegistryHolder();
+        Holder<Item> holder = holderFromLegacyWireId(legacyWireId);
         DataComponentPatch patch = patchCodec.decode(input);
         return new ItemStack(holder, count, patch);
     }

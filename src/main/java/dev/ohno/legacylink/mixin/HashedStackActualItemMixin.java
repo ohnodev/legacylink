@@ -1,24 +1,23 @@
 package dev.ohno.legacylink.mixin;
 
 import dev.ohno.legacylink.connection.LegacyTracker;
+import dev.ohno.legacylink.encoding.LegacyInboundDecoding;
+import dev.ohno.legacylink.encoding.LegacyItemStackWireCodec;
 import dev.ohno.legacylink.encoding.LegacyOutboundEncoding;
 import dev.ohno.legacylink.mapping.LegacyItemIdTable;
 import net.minecraft.core.Holder;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.Connection;
 import net.minecraft.network.HashedPatchMap;
 import net.minecraft.network.HashedStack;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.Items;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Mutable;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import dev.ohno.legacylink.encoding.LegacyInboundDecoding;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
@@ -43,12 +42,7 @@ public abstract class HashedStackActualItemMixin {
                     return vanilla.decode(input);
                 }
                 int wireItemId = input.readVarInt();
-                int serverId = LegacyItemIdTable.serverItemIdFromLegacyWire(wireItemId);
-                Item item = BuiltInRegistries.ITEM.byId(serverId);
-                if (item == null) {
-                    item = Items.STONE;
-                }
-                Holder<Item> holder = item.builtInRegistryHolder();
+                Holder<Item> holder = LegacyItemStackWireCodec.holderFromLegacyWireId(wireItemId);
                 int count = input.readVarInt();
                 HashedPatchMap components = HashedPatchMap.STREAM_CODEC.decode(input);
                 return new HashedStack.ActualItem(holder, count, components);

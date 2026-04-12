@@ -133,8 +133,7 @@ public final class LegacyItemIdTable {
         if (legacyWireId < 0 || legacyWireId >= inv.length) {
             return stoneServerItemId;
         }
-        int sid = inv[legacyWireId];
-        return sid >= 0 ? sid : stoneServerItemId;
+        return inv[legacyWireId];
     }
 
     private static boolean is26_2Only(Item item) {
