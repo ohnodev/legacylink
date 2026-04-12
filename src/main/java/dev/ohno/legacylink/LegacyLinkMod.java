@@ -53,7 +53,7 @@ public class LegacyLinkMod implements ModInitializer {
                     + "no move_entity spam.");
         }
         if (LegacyOutboundPacketCapture.enabled()) {
-            LOGGER.warn("[LegacyLink] Outbound packet capture ON (-Dlegacylink.captureOutbound=true). "
+            LOGGER.warn("[LegacyLink] Outbound packet capture ON (-Dlegacylink.captureOutbound=true or LEGACYLINK_CAPTURE_OUTBOUND=1). "
                     + "Every legacy clientbound packet logged to latest.log; grep [LegacyLink][OutboundCapture]. "
                     + "Stages: connection_send (pre-handler) vs post_legacy_rewrite (wire-bound). Very verbose — disable after capture.");
         }

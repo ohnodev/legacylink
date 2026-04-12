@@ -79,9 +79,11 @@ Set `-Dlegacylink.verbose=true` in JVM args for detailed translation logging.
 
 `seq` is not aligned across sessions; compare by order and packet type.
 
-### Local player entity metadata (POV / pose)
+### Entity metadata rewrites (synced data)
 
-`-Dlegacylink.tracePlayerEntityData=true` → grep `[LegacyLink][EntityDataTrace]`.
+`-Dlegacylink.traceEntityDataRewrite=true` on the **server** JVM → grep `logs/latest.log` for `[LegacyLink][EntityDataRewrite]` — logs when `remapEntityData` changes metadata index sets (`beforeIds` vs `afterIds`). Also enabled when outbound capture is on (see below).
+
+Optional: `-Dlegacylink.tracePlayerEntityData=true` logs player entity data index dumps as `[LegacyLink][EntityDataTrace]` (separate from rewrite trace).
 
 ### Camera (`set_camera`)
 
@@ -89,7 +91,7 @@ Set `-Dlegacylink.verbose=true` in JVM args for detailed translation logging.
 
 ### Full legacy outbound capture
 
-`-Dlegacylink.captureOutbound=true` (or `LEGACYLINK_CAPTURE_OUTBOUND=1`) → grep `[LegacyLink][OutboundCapture]`. **Very verbose** — disable after capture.
+`-Dlegacylink.captureOutbound=true` on the **server** JVM, **or** set environment variable `LEGACYLINK_CAPTURE_OUTBOUND` to `1` or `true` (case-insensitive). Grep `logs/latest.log` for `[LegacyLink][OutboundCapture]`. Only **legacy** connections are logged. Stages: `connection_send` (as `Connection.send` hands off; bundles expanded) vs `post_legacy_rewrite` (after `LegacyPacketHandler` + bundle flatten — matches per-frame encode). **Very verbose** — disable after capture.
 
 ## Build from source
 
@@ -107,7 +109,7 @@ This repository includes a **prebuilt** Fabric mod jar under `prebuilt/` for dir
 Current file:
 
 - `prebuilt/legacylink-0.1.0.jar`
-- SHA-256: `78369b9d2cec9b95ecef54d8cb153ecb4fd2fd799d0ec532dc6d5ae399410b76`
+- SHA-256: `15a9fb574ea1b06f3fa6e240055d9271396c989da13fce99a26509c32de4f0c7`
 
 Verify:
 
