@@ -26,13 +26,25 @@ public final class ItemRewriter {
     }
 
     public static ItemStackTemplate remapTemplate(ItemStackTemplate template) {
+        Item originalItem = template.item().value();
+        Item mappedItem = remapItemToLegacySafe(originalItem);
+        boolean itemChanged = mappedItem != originalItem;
+
         ItemStack created = template.create();
         if (created.isEmpty()) {
-            return template;
+            if (!itemChanged) {
+                return template;
+            }
+            // Some templates fail strict validation during create(); still remap the item id so wire encode stays legacy-safe.
+            return new ItemStackTemplate(mappedItem.builtInRegistryHolder(), template.count(), template.components());
         }
+
         ItemStack out = remapStack(created);
         if (out == created) {
-            return template;
+            if (!itemChanged) {
+                return template;
+            }
+            return new ItemStackTemplate(mappedItem.builtInRegistryHolder(), template.count(), template.components());
         }
         return ItemStackTemplate.fromNonEmptyStack(out);
     }
