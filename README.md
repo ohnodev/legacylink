@@ -1,84 +1,131 @@
-# LegacyLink
+<div align="center">
+ <h1>LegacyLink</h1>
 
-Lightweight 26.2-to-26.1 protocol translation layer for Fabric servers.
+ <div>
+  <a href="https://github.com/ohnodev/legacylink">
+   <img alt="GitHub" src="https://img.shields.io/badge/github-ohnodev%2Flegacylink-181717?style=flat&logo=github"/>
+  </a>&nbsp;&nbsp;
+  <a href="https://github.com/ohnodev/legacylink/blob/main/LICENSE">
+   <img alt="License" src="https://img.shields.io/github/license/ohnodev/legacylink?style=flat"/>
+  </a>&nbsp;&nbsp;
+  <a href="https://smp.thecabal.app">
+   <img alt="Website" src="https://img.shields.io/badge/website-smp.thecabal.app-4caf50?style=flat">
+  </a>&nbsp;&nbsp;
+  <a href="https://discord.gg/2NR3W7j4vP">
+   <img alt="Discord" src="https://img.shields.io/badge/discord-Cabal%20SMP-5865F2?style=flat&logo=discord&logoColor=white">
+  </a>
+ </div>
+ <br>
+</div>
 
-## What it does
+Lightweight **26.2 → 26.1** protocol translation for **Fabric servers**. Lets **Minecraft 26.1.x** clients join a **26.2-snapshot** world without a proxy. Designed for performance-oriented stacks (e.g. alongside [ReaperAC](https://github.com/ohnodev/reaper-ac)).
 
-LegacyLink allows Minecraft 26.1 clients (protocol 775) to connect to a Minecraft 26.2-snapshot server (protocol 1073742132). It runs as a Fabric server mod — no proxy needed.
+**Outbound path:** clientbound packets for legacy connections are rewritten in `LegacyPacketHandler` (Netty, after `packet_handler`). This is not a ViaVersion port—only a small server-side subset. For broad multi-version support, use Via on a proxy.
 
-**Outbound path:** clientbound packets for legacy connections are rewritten only in `LegacyPacketHandler` (Netty, after `packet_handler`). There is no second pass in `Connection.send`—doing both was redundant and could damage chunk buffers.
+## Downloads
 
-This is not a ViaVersion port: it is a small server-only subset. For full multi-version coverage, run a Via proxy in front of the server.
+- **Modrinth:** listing in progress (use **prebuilt jar** below or GitHub until live)
+- **GitHub Releases:** coming soon
+- **Prebuilt (this repo):** `prebuilt/legacylink-0.1.0.jar` — see [Prebuilt artifact](#prebuilt-artifact-in-this-repo)
 
-### Translation scope (v0.1)
+## Requirements & installation
 
-- **Handshake**: Accepts 26.1 client protocol version during login
-- **Registry sync**: Filters 26.2-only entries (sulfur blocks, sulfur_cube archetype, sulfur_caves biome) from data-driven registries sent during CONFIGURATION; also drops 26.2-only `minecraft:attribute` entries (`bounciness`, `air_drag_modifier`, `friction_modifier`) so legacy clients keep the same attribute network IDs as 26.1 (fixes mis-decoded `camera_distance` / `scale` and bad third-person camera)
-- **Block updates & chunks**: Remaps sulfur and 26.2-only block state IDs (above the 26.1 client registry) to stone in block updates, section updates, and full chunk packets (`LegacyChunkTranslator`)
-- **Entity spawns**: Remaps sulfur_cube entity to slime for 26.1 clients
-- **Telemetry**: Logs all translation actions with session stats on shutdown
+- **Java 25+**
+- **Fabric Loader** 0.19.1+
+- **Fabric API** matching your server line (e.g. `0.145.5+26.2` or `0.145.5+26.2-snapshot-1` for snapshot servers)
+- **Minecraft server** 26.2-snapshot (see `gradle.properties` `minecraft_version` in this repo for the exact compile target)
+
+Copy the jar into `mods/` and restart:
+
+```bash
+cp prebuilt/legacylink-0.1.0.jar /path/to/server/mods/
+```
+
+## Version policy
+
+- **Legacy clients:** **26.1.1+** (protocol floor aligned with supported join path).
+- **Server:** current **26.2-snapshot** line this mod is built against; newer Minecraft versions require refreshing LegacyLink when protocols diverge.
+- Full multi-version / old-client matrices are out of scope.
+
+## What it does (v0.1 scope)
+
+- **Handshake:** accepts 26.1 client protocol during login
+- **Registry sync:** filters 26.2-only entries (sulfur blocks, `sulfur_cube` archetype, `sulfur_caves` biome) from configuration registries; drops 26.2-only `minecraft:attribute` entries (`bounciness`, `air_drag_modifier`, `friction_modifier`) so legacy clients keep 26.1-aligned attribute network IDs (avoids mis-decoded `camera_distance` / `scale` and bad third-person camera)
+- **Block updates & chunks:** remaps sulfur and 26.2-only block state IDs above the 26.1 client registry in block updates, section updates, and full chunks (`LegacyChunkTranslator`)
+- **Entity spawns:** remaps `sulfur_cube` to slime for 26.1 clients
+- **Telemetry:** optional trace flags and session stats (see below)
 
 ### Known limitations (v0.1)
 
-- **Block state ID ceiling** (`MAX_26_1_BLOCKSTATE_ID` in `LegacyLinkConstants`) is the **inclusive** last index the legacy client accepts (`0..MAX`). It is pinned to the lowest supported legacy client (`26.1.1`: `30207`) so `26.2` palette ids (`30208+`) are always remapped; setting this too high causes legacy clients to crash in `LinearPalette.read`.
-- **Item stacks (outbound):** `LegacyPacketHandler` remaps and sanitizes stacks for legacy clients on container set slot/content, cursor item, player inventory, advancements (icons), and recipes/tags; wire-level item IDs are translated via `LegacyItemIdTable` + `ItemStackOptionalCodecMixin`. Inbound (client→server) item data is not rewritten.
+- **Block state ID ceiling** (`MAX_26_1_BLOCKSTATE_ID` in `LegacyLinkConstants`) is the **inclusive** last index the legacy client accepts (`0..MAX`). Pinned to **26.1.1** (`30207`) so 26.2 palette IDs remap safely; setting it too high can crash legacy clients in `LinearPalette.read`.
+- **Item stacks (outbound):** remapped/sanitized on container, cursor, inventory, advancements (icons), recipes/tags; wire IDs via `LegacyItemIdTable` + `ItemStackOptionalCodecMixin`. **Inbound** client→server item payloads are not rewritten.
 
-## Requirements
+## Configuration
 
-- Java 25+
-- Fabric Loader 0.19.1+
-- Fabric API 0.145.5+26.2
-- Minecraft server 26.2-snapshot-1
+Set `-Dlegacylink.verbose=true` in JVM args for detailed translation logging.
 
-## Build
+### Spawn / join (wrong initial placement)
+
+`-Dlegacylink.traceSpawn=true` on the **server** JVM → grep `logs/latest.log` for `[LegacyLink][SpawnTrace]`. Stages: `connection_send` (26.2) vs `post_legacy_rewrite` (26.1). Types: `login` (incl. `CommonPlayerSpawnInfo`), `respawn`, `set_default_spawn`, `add_entity`, `player_position` — not per-tick `move_entity` spam.
+
+### Position traffic (snap-back / desync)
+
+`-Dlegacylink.tracePositions=true` on the **server** JVM → grep `[LegacyLink][PosTrace]`:
+
+| `stage` | `legacy` | Meaning |
+|--------|----------|--------|
+| `connection_send` | `false` | Outbound as the server emits for a **26.2** client (before Netty; anticheat may still alter later). |
+| `post_legacy_rewrite` | `true` | After LegacyLink for a **26.1** client — closest to what 26.1 receives for rewritten movement types. |
+
+`seq` is not aligned across sessions; compare by order and packet type.
+
+### Local player entity metadata (POV / pose)
+
+`-Dlegacylink.tracePlayerEntityData=true` → grep `[LegacyLink][EntityDataTrace]`.
+
+### Camera (`set_camera`)
+
+`-Dlegacylink.traceCamera=true` → grep `[LegacyLink][CameraTrace]`.
+
+### Full legacy outbound capture
+
+`-Dlegacylink.captureOutbound=true` (or `LEGACYLINK_CAPTURE_OUTBOUND=1`) → grep `[LegacyLink][OutboundCapture]`. **Very verbose** — disable after capture.
+
+## Build from source
 
 ```bash
 export JAVA_HOME="/path/to/java25"
 ./gradlew build -x test
 ```
 
-Output jar: `build/libs/legacylink-0.1.0.jar`
+Output: `build/libs/legacylink-0.1.0.jar`
 
-## Deploy
+## Prebuilt artifact in this repo
 
-Copy the jar to the server's `mods/` directory and restart:
+This repository includes a **prebuilt** Fabric mod jar under `prebuilt/` for direct deployment and Modrinth packaging.
+
+Current file:
+
+- `prebuilt/legacylink-0.1.0.jar`
+- SHA-256: `78369b9d2cec9b95ecef54d8cb153ecb4fd2fd799d0ec532dc6d5ae399410b76`
+
+Verify:
 
 ```bash
-cp build/libs/legacylink-0.1.0.jar /path/to/server/mods/
-sudo systemctl restart minecraft-cabal
+shasum -a 256 prebuilt/legacylink-0.1.0.jar
 ```
 
-## Configuration
+Update this checksum in the README whenever the prebuilt jar is replaced.
 
-Set `-Dlegacylink.verbose=true` in JVM args for detailed packet translation logging.
+## Resources
 
-### Comparing 26.2 vs 26.1 spawn / join (wrong initial placement)
+- Server: [smp.thecabal.app](https://smp.thecabal.app)
+- Discord: [Cabal SMP](https://discord.gg/2NR3W7j4vP)
 
-Add `-Dlegacylink.traceSpawn=true` to the **server** JVM, then grep `logs/latest.log` for `[LegacyLink][SpawnTrace]`. Same `stage` / `legacy` columns as below: `connection_send` (26.2) vs `post_legacy_rewrite` (26.1). Logged types: `login` (includes `CommonPlayerSpawnInfo`), `respawn`, `set_default_spawn`, `add_entity`, `player_position` — **not** per-tick `move_entity` spam.
+## Contributing
 
-### Comparing 26.2 vs 26.1 position traffic (snap-back / desync)
-
-Add `-Dlegacylink.tracePositions=true` to the **server** JVM. Stand still or reproduce the issue, then grep `logs/latest.log` for `[LegacyLink][PosTrace]`:
-
-| `stage` | `legacy` | Meaning |
-|--------|----------|--------|
-| `connection_send` | `false` | Outbound packet as the server emits it for a **26.2** client (before the Netty pipeline; anticheat may still change it later). |
-| `post_legacy_rewrite` | `true` | Same logical packet **after** LegacyLink translation for a **26.1** client — closest to what 26.1 actually receives for movement types LegacyLink rewrites. |
-
-`seq` is global and not aligned between sessions; diff by wall-clock order and packet type. LegacyLink does not add PacketEvents/Reaper hooks — this is vanilla `Packet` logging on the game connection.
-
-### Entity metadata for the local player (wrong POV / pose)
-
-Add `-Dlegacylink.tracePlayerEntityData=true` on the **server** JVM. Join with a 26.1 client and grep `logs/latest.log` for `[LegacyLink][EntityDataTrace]` — one line per `ClientboundSetEntityDataPacket` for your player entity listing every synced metadata index. Compare with a 26.2 client session (no rewrite) if the index set or max id diverges.
-
-### Camera attach packet (`set_camera`)
-
-Add `-Dlegacylink.traceCamera=true` on the **server** JVM. Grep `[LegacyLink][CameraTrace]`: `connection_send` is the pre-legacy 26.2 path; `post_legacy_rewrite` is what legacy clients receive (packet is normally unchanged — only the camera entity id is on the wire). Use this to confirm spectator / forced-camera targets match between client versions.
-
-### Full legacy outbound capture (diff logs vs a pure 26.1 server)
-
-Add `-Dlegacylink.captureOutbound=true` on the **server** JVM (or `LEGACYLINK_CAPTURE_OUTBOUND=1` with `minecraft-cabal/scripts/start.sh`). Grep `logs/latest.log` for `[LegacyLink][OutboundCapture]`. Only **legacy** connections are logged. Stages: `connection_send` (as `Connection.send` hands off; bundles expanded) vs `post_legacy_rewrite` (after `LegacyPacketHandler` + bundle flatten — matches per-frame encode). **Very verbose** — turn off after capture.
+Issues and pull requests are welcome on [GitHub](https://github.com/ohnodev/legacylink).
 
 ## License
 
-MIT — see `LICENSE` for details.
+MIT — see [`LICENSE`](LICENSE).
