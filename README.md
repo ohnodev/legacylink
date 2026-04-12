@@ -67,9 +67,11 @@ Add `-Dlegacylink.tracePositions=true` to the **server** JVM. Stand still or rep
 
 `seq` is global and not aligned between sessions; diff by wall-clock order and packet type. LegacyLink does not add PacketEvents/Reaper hooks — this is vanilla `Packet` logging on the game connection.
 
-### Entity metadata for the local player (wrong POV / pose)
+### Entity metadata rewrites (synced data)
 
-Add `-Dlegacylink.tracePlayerEntityData=true` on the **server** JVM. Join with a 26.1 client and grep `logs/latest.log` for `[LegacyLink][EntityDataTrace]` — one line per `ClientboundSetEntityDataPacket` for your player entity listing every synced metadata index. Compare with a 26.2 client session (no rewrite) if the index set or max id diverges.
+Add `-Dlegacylink.traceEntityDataRewrite=true` on the **server** JVM and grep `logs/latest.log` for `[LegacyLink][EntityDataRewrite]` — logs when `remapEntityData` changes metadata index sets (`beforeIds` vs `afterIds`). Also enabled when outbound capture is on (see below).
+
+Optional: `-Dlegacylink.tracePlayerEntityData=true` logs player entity data index dumps as `[LegacyLink][EntityDataTrace]` (separate from rewrite trace).
 
 ### Camera attach packet (`set_camera`)
 
@@ -77,7 +79,7 @@ Add `-Dlegacylink.traceCamera=true` on the **server** JVM. Grep `[LegacyLink][Ca
 
 ### Full legacy outbound capture (diff logs vs a pure 26.1 server)
 
-Add `-Dlegacylink.captureOutbound=true` on the **server** JVM (or `LEGACYLINK_CAPTURE_OUTBOUND=1` with `minecraft-cabal/scripts/start.sh`). Grep `logs/latest.log` for `[LegacyLink][OutboundCapture]`. Only **legacy** connections are logged. Stages: `connection_send` (as `Connection.send` hands off; bundles expanded) vs `post_legacy_rewrite` (after `LegacyPacketHandler` + bundle flatten — matches per-frame encode). **Very verbose** — turn off after capture.
+Add `-Dlegacylink.captureOutbound=true` on the **server** JVM, **or** set environment variable `LEGACYLINK_CAPTURE_OUTBOUND` to `1` or `true` (case-insensitive). Grep `logs/latest.log` for `[LegacyLink][OutboundCapture]`. Only **legacy** connections are logged. Stages: `connection_send` (as `Connection.send` hands off; bundles expanded) vs `post_legacy_rewrite` (after `LegacyPacketHandler` + bundle flatten — matches per-frame encode). **Very verbose** — turn off after capture.
 
 ## License
 

@@ -35,21 +35,32 @@ import java.util.concurrent.atomic.AtomicReference;
  *       bundle flattening (matches what {@link net.minecraft.network.PacketEncoder} encodes per frame).</li>
  * </ul>
  * <p>
- * Enable: {@code -Dlegacylink.captureOutbound=true} — grep {@code [LegacyLink][OutboundCapture]}.
+ * Enable: {@code -Dlegacylink.captureOutbound=true} or env {@code LEGACYLINK_CAPTURE_OUTBOUND=1} / {@code true} — grep {@code [LegacyLink][OutboundCapture]}.
  * {@link EntityDataRewriteTrace} also turns on with capture outbound; or use {@code -Dlegacylink.traceEntityDataRewrite=true} alone.
  * <p>
  * <b>Warning:</b> Very verbose; disable after capture. Large payloads (chunks) are summarized only.
  */
 public final class LegacyOutboundPacketCapture {
 
-    private static final boolean CAPTURE_OUTBOUND_ENABLED = outboundCapturePropertyTrue();
+    private static final boolean CAPTURE_OUTBOUND_ENABLED = outboundCaptureEnabled();
 
     private static final AtomicLong SEQ = new AtomicLong();
     private static final AtomicReference<Field> MOVE_ENTITY_ID_REF = new AtomicReference<>();
     private static final AtomicReference<Field> ROTATE_HEAD_ENTITY_ID_REF = new AtomicReference<>();
     private static volatile @Nullable Field cameraEntityIdField;
 
-    private static boolean outboundCapturePropertyTrue() {
+    /**
+     * {@code LEGACYLINK_CAPTURE_OUTBOUND} is checked first; then system property {@code legacylink.captureOutbound}.
+     * Truthy values: {@code 1} or {@code true} (case-insensitive for {@code true}).
+     */
+    private static boolean outboundCaptureEnabled() {
+        String env = System.getenv("LEGACYLINK_CAPTURE_OUTBOUND");
+        if (env != null) {
+            String t = env.trim();
+            if ("1".equals(t) || "true".equalsIgnoreCase(t)) {
+                return true;
+            }
+        }
         String v = System.getProperty("legacylink.captureOutbound", "");
         return "true".equalsIgnoreCase(v) || "1".equals(v);
     }

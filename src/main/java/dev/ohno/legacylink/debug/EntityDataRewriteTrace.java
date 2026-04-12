@@ -12,7 +12,8 @@ import java.util.List;
  * {@code server/logs/latest.log} can prove rewrites (compare {@code beforeIds} vs {@code afterIds}; villager fix drops 21
  * and moves 20→18).
  * <p>
- * Enable: {@code -Dlegacylink.traceEntityDataRewrite=true} — also on when {@code -Dlegacylink.captureOutbound=true}.
+ * Enable: {@code -Dlegacylink.traceEntityDataRewrite=true} — also on when outbound capture is on
+ * ({@code -Dlegacylink.captureOutbound=true} or {@code LEGACYLINK_CAPTURE_OUTBOUND}).
  * Grep: {@code [LegacyLink][EntityDataRewrite]}.
  */
 public final class EntityDataRewriteTrace {
@@ -22,8 +23,7 @@ public final class EntityDataRewriteTrace {
         if ("true".equalsIgnoreCase(v) || "1".equals(v)) {
             return true;
         }
-        String cap = System.getProperty("legacylink.captureOutbound", "");
-        return "true".equalsIgnoreCase(cap) || "1".equals(cap);
+        return LegacyOutboundPacketCapture.enabled();
     }
 
     public static String formatSortedIds(List<SynchedEntityData.DataValue<?>> list) {
