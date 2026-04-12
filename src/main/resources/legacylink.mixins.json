@@ -8,6 +8,7 @@
     "ConnectionSendMixin",
     "ConfigurationFinishMixin",
     "HashedStackActualItemMixin",
+    "ItemStackTemplateCodecMixin",
     "ItemStackOptionalCodecMixin",
     "PacketDecoderMixin",
     "PacketEncoderMixin",

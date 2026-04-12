@@ -1,7 +1,6 @@
 package dev.ohno.legacylink.handler.rewrite;
 
 import dev.ohno.legacylink.mapping.RegistryRemapper;
-import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -12,15 +11,17 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Packet-facing item rewrites for legacy clients. Numeric ids use {@link RegistryRemapper#remapItem}; stacks then pass
- * through {@link ItemComponentSanitizer} to drop 26.2-only components (e.g. sulfur cube content) and rewrite nested
- * stacks in containers, bundles, and charged projectiles.
+ * Packet-facing item rewrites for legacy clients. Numeric ids are canonicalized through
+ * {@link RegistryRemapper#remapItem(int)} so packet rewrites and codec remaps share one source of truth; stacks then pass through
+ * {@link ItemComponentSanitizer} to drop 26.2-only components (e.g. sulfur cube content) and rewrite nested stacks
+ * in containers, bundles, and charged projectiles.
  */
 public final class ItemRewriter {
 
     public static Item remapItemToLegacySafe(Item item) {
-        int mappedId = RegistryRemapper.remapItem(Item.getId(item));
-        Item mapped = BuiltInRegistries.ITEM.byId(mappedId);
+        int serverId = Item.getId(item);
+        int canonicalServerId = RegistryRemapper.remapItem(serverId);
+        Item mapped = BuiltInRegistries.ITEM.byId(canonicalServerId);
         return mapped != null ? mapped : Items.STONE;
     }
 

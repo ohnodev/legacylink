@@ -49,6 +49,7 @@ import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetPlayerInventoryPacket;
@@ -71,6 +72,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.RecipePropertySet;
+import com.mojang.datafixers.util.Pair;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -333,6 +335,9 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         }
         if (msg instanceof ClientboundSetPlayerInventoryPacket inventoryPacket) {
             return remapSetPlayerInventory(inventoryPacket);
+        }
+        if (msg instanceof ClientboundSetEquipmentPacket setEquipmentPacket) {
+            return remapSetEquipment(setEquipmentPacket);
         }
         if (msg instanceof ClientboundUpdateRecipesPacket recipesPacket) {
             return remapUpdateRecipes(recipesPacket);
@@ -697,6 +702,21 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             return packet;
         }
         return new ClientboundSetPlayerInventoryPacket(packet.slot(), remapped);
+    }
+
+    public ClientboundSetEquipmentPacket remapSetEquipment(ClientboundSetEquipmentPacket packet) {
+        List<Pair<net.minecraft.world.entity.EquipmentSlot, ItemStack>> original = packet.getSlots();
+        List<Pair<net.minecraft.world.entity.EquipmentSlot, ItemStack>> rewritten = new ArrayList<>(original.size());
+        boolean changed = false;
+        for (Pair<net.minecraft.world.entity.EquipmentSlot, ItemStack> entry : original) {
+            ItemStack remapped = ItemRewriter.remapStack(entry.getSecond());
+            rewritten.add(Pair.of(entry.getFirst(), remapped));
+            changed |= remapped != entry.getSecond();
+        }
+        if (!changed) {
+            return packet;
+        }
+        return new ClientboundSetEquipmentPacket(packet.getEntity(), rewritten);
     }
 
     @SuppressWarnings("unchecked")

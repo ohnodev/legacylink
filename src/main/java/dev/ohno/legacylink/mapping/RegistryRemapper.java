@@ -16,8 +16,8 @@ import net.minecraft.world.level.block.state.properties.SpeleothemThickness;
 
 /**
  * Server-side 26.2 → 26.1 numeric remaps used on the wire. Same role as Via’s per-protocol mapping tables, but
- * scoped to this version pair: explicit {@link LegacyLinkConstants} entries plus range guards so unknown high ids
- * never reach a 26.1 client.
+ * scoped to this version pair: explicit {@link LegacyLinkConstants} entries plus canonicalized id translation via
+ * {@link LegacyItemIdTable} for item ids.
  */
 public final class RegistryRemapper {
 
@@ -26,7 +26,6 @@ public final class RegistryRemapper {
 
     /** Server registry id for {@link Blocks#STONE} default state — written to legacy clients as the generic fallback. */
     private static int fallbackBlockStateId = 1;
-    private static final Item FALLBACK_ITEM = Items.STONE;
 
     public static void buildMappings() {
         BLOCK_STATE_REMAP.clear();
@@ -90,18 +89,12 @@ public final class RegistryRemapper {
     }
 
     /**
-     * Map a 26.2 item registry id to one the legacy client understands: known mod replacements first, otherwise
-     * pass-through if {@code <= MAX_26_1_ITEM_ID}, else {@link Items#STONE}.
+     * Canonicalize a server item id through legacy wire-id space and back to a server id.
+     * This keeps item id behavior aligned with {@link LegacyItemStackWireCodec} and packet rewriters.
      */
     public static int remapItem(int itemId) {
-        int explicit = ITEM_REMAP.getOrDefault(itemId, itemId);
-        if (explicit != itemId) {
-            return explicit;
-        }
-        if (itemId > LegacyLinkConstants.MAX_26_1_ITEM_ID) {
-            return Item.getId(FALLBACK_ITEM);
-        }
-        return itemId;
+        int legacyWireId = LegacyItemIdTable.toLegacyId(itemId);
+        return LegacyItemIdTable.serverItemIdFromLegacyWire(legacyWireId);
     }
 
     public static boolean needsBlockRemap(int stateId) {

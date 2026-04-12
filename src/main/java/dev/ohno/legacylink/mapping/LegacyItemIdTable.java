@@ -141,6 +141,10 @@ public final class LegacyItemIdTable {
         if (key == null) {
             return true;
         }
+        // Legacy clients only know vanilla item registries; any custom/mod namespace must be collapsed.
+        if (!"minecraft".equals(key.getNamespace())) {
+            return true;
+        }
         return LegacyLinkConstants.is26_2OnlyItemId(key.toString());
     }
 }
