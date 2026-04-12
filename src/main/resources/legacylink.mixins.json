@@ -7,7 +7,9 @@
     "HandshakeMixin",
     "ConnectionSendMixin",
     "ConfigurationFinishMixin",
+    "HashedStackActualItemMixin",
     "ItemStackOptionalCodecMixin",
+    "PacketDecoderMixin",
     "PacketEncoderMixin",
     "ServerCommonConnectionAccessor",
     "StatusPacketMixin"

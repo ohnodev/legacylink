@@ -8,7 +8,7 @@ val fabric_version: String by project
 val loader_version: String by project
 
 group = "dev.ohno"
-version = "0.1.0"
+version = "0.1.1"
 
 repositories {
     maven("https://maven.fabricmc.net/")

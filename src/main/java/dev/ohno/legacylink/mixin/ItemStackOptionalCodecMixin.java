@@ -1,15 +1,11 @@
 package dev.ohno.legacylink.mixin;
 
-import dev.ohno.legacylink.connection.LegacyTracker;
-import dev.ohno.legacylink.encoding.LegacyOutboundEncoding;
-import dev.ohno.legacylink.mapping.LegacyItemIdTable;
+import dev.ohno.legacylink.encoding.LegacyItemStackWireCodec;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponentPatch;
-import net.minecraft.network.Connection;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -22,11 +18,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.util.List;
 
 /**
- * Wraps {@link ItemStack#OPTIONAL_STREAM_CODEC} to emit 26.1-compatible item wire IDs for legacy clients.
- * <p>
- * 26.2 inserts new items (sulfur, cinnabar) into the built-in item registry, shifting numeric IDs of all
- * subsequent items. The 26.1 client uses its own built-in IDs to decode, so we must translate the varint
- * that {@code Item.STREAM_CODEC} would normally write.
+ * Wraps {@link ItemStack#OPTIONAL_STREAM_CODEC} and {@link ItemStack#OPTIONAL_UNTRUSTED_STREAM_CODEC} so legacy
+ * connections use 26.1 item wire ids on the wire (encode) and map them back to 26.2 registry ids on decode.
  */
 @Mixin(ItemStack.class)
 public abstract class ItemStackOptionalCodecMixin {
@@ -39,37 +32,60 @@ public abstract class ItemStackOptionalCodecMixin {
     @Mutable
     @Shadow
     @Final
+    public static StreamCodec<RegistryFriendlyByteBuf, ItemStack> OPTIONAL_UNTRUSTED_STREAM_CODEC;
+
+    @Mutable
+    @Shadow
+    @Final
     public static StreamCodec<RegistryFriendlyByteBuf, List<ItemStack>> OPTIONAL_LIST_STREAM_CODEC;
 
     @Inject(method = "<clinit>", at = @At("TAIL"))
-    private static void legacylink$wrapOptionalItemStackCodec(CallbackInfo ci) {
-        final StreamCodec<RegistryFriendlyByteBuf, ItemStack> delegate = OPTIONAL_STREAM_CODEC;
+    private static void legacylink$wrapOptionalItemStackCodecs(CallbackInfo ci) {
+        final StreamCodec<RegistryFriendlyByteBuf, ItemStack> trustedVanilla = OPTIONAL_STREAM_CODEC;
+        final StreamCodec<RegistryFriendlyByteBuf, ItemStack> untrustedVanilla = OPTIONAL_UNTRUSTED_STREAM_CODEC;
+
         OPTIONAL_STREAM_CODEC = new StreamCodec<>() {
             @Override
             public ItemStack decode(RegistryFriendlyByteBuf input) {
-                return delegate.decode(input);
+                return LegacyItemStackWireCodec.decodeOptional(
+                        input,
+                        DataComponentPatch.STREAM_CODEC,
+                        trustedVanilla
+                );
             }
 
             @Override
             public void encode(RegistryFriendlyByteBuf output, ItemStack stack) {
-                Connection connection = LegacyOutboundEncoding.connection();
-                if (connection == null || !LegacyTracker.isLegacy(connection)) {
-                    delegate.encode(output, stack);
-                    return;
-                }
-
-                if (stack.isEmpty()) {
-                    output.writeVarInt(0);
-                    return;
-                }
-
-                output.writeVarInt(stack.getCount());
-                int serverItemId = Item.getId(stack.getItem());
-                int legacyItemId = LegacyItemIdTable.toLegacyId(serverItemId);
-                output.writeVarInt(legacyItemId);
-                DataComponentPatch.STREAM_CODEC.encode(output, stack.getComponentsPatch());
+                LegacyItemStackWireCodec.encodeOptional(
+                        output,
+                        stack,
+                        DataComponentPatch.STREAM_CODEC,
+                        trustedVanilla
+                );
             }
         };
+
+        OPTIONAL_UNTRUSTED_STREAM_CODEC = new StreamCodec<>() {
+            @Override
+            public ItemStack decode(RegistryFriendlyByteBuf input) {
+                return LegacyItemStackWireCodec.decodeOptional(
+                        input,
+                        DataComponentPatch.DELIMITED_STREAM_CODEC,
+                        untrustedVanilla
+                );
+            }
+
+            @Override
+            public void encode(RegistryFriendlyByteBuf output, ItemStack stack) {
+                LegacyItemStackWireCodec.encodeOptional(
+                        output,
+                        stack,
+                        DataComponentPatch.DELIMITED_STREAM_CODEC,
+                        untrustedVanilla
+                );
+            }
+        };
+
         OPTIONAL_LIST_STREAM_CODEC = OPTIONAL_STREAM_CODEC.apply(ByteBufCodecs.collection(NonNullList::createWithCapacity));
     }
 }
