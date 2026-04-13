@@ -79,9 +79,6 @@ public final class RegistryRemapper {
 
     public static int remapBlockState(int stateId) {
         int mapped = BLOCK_STATE_REMAP.getOrDefault(stateId, stateId);
-        if (mapped > LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID) {
-            return fallbackBlockStateId;
-        }
         BlockState atId = Block.BLOCK_STATE_REGISTRY.byId(mapped);
         if (atId == null) {
             return fallbackBlockStateId;
@@ -105,7 +102,7 @@ public final class RegistryRemapper {
     }
 
     public static boolean needsBlockRemap(int stateId) {
-        return BLOCK_STATE_REMAP.containsKey(stateId) || stateId > LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID;
+        return BLOCK_STATE_REMAP.containsKey(stateId);
     }
 
     public static int blockStateRemapCount() {
