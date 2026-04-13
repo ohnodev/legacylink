@@ -73,7 +73,8 @@ public final class LegacyItemIdTable {
         if (nextLegacyId != LegacyLinkConstants.MAX_26_1_ITEM_ID + 1) {
             LegacyLinkMod.LOGGER.warn(
                     "[LegacyLink] Legacy item count {} does not match expected {} — check 26.2-only item detection",
-                    nextLegacyId, LegacyLinkConstants.MAX_26_1_ITEM_ID + 1);
+                    nextLegacyId, LegacyLinkConstants.MAX_26_1_ITEM_ID + 1
+            );
         }
     }
 

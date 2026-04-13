@@ -7,6 +7,7 @@ import dev.ohno.legacylink.LegacyLinkConstants;
 import dev.ohno.legacylink.LegacyLinkMod;
 import dev.ohno.legacylink.connection.LegacyTracker;
 import dev.ohno.legacylink.encoding.LegacyOutboundEncoding;
+import dev.ohno.legacylink.integration.PacketEventsVersionBridge;
 import dev.ohno.legacylink.debug.CameraPacketTrace;
 import dev.ohno.legacylink.debug.EntityDataRewriteTrace;
 import dev.ohno.legacylink.debug.LegacyOutboundPacketCapture;
@@ -16,6 +17,7 @@ import dev.ohno.legacylink.debug.SpawnPacketTrace;
 import dev.ohno.legacylink.handler.rewrite.AdvancementRewriter;
 import dev.ohno.legacylink.handler.rewrite.BlockStatePacketRewriter;
 import dev.ohno.legacylink.handler.rewrite.CubeMobEntityData2661;
+import dev.ohno.legacylink.handler.rewrite.EntityMetadataRewriter2661;
 import dev.ohno.legacylink.handler.rewrite.RecipeBookAddRewriter;
 import dev.ohno.legacylink.handler.rewrite.Vanilla261EntityMetadataTailTrim2661;
 import dev.ohno.legacylink.handler.rewrite.VillagerEntityData2661;
@@ -169,6 +171,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             ctx.write(msg, promise);
             return;
         }
+        PacketEventsVersionBridge.force26_2IfPresent(encodeConn);
         try (LegacyOutboundEncoding.Scope ignored = LegacyOutboundEncoding.enterScoped(encodeConn)) {
             writeTranslated(ctx, msg, promise);
         }
@@ -621,8 +624,12 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         if (tailTrimmed != null) {
             items = tailTrimmed;
         }
+        var serializerRewritten = EntityMetadataRewriter2661.rewriteForLegacy(entityId, clientType, items);
+        if (serializerRewritten != null) {
+            items = serializerRewritten;
+        }
         EntityDataRewriteTrace.logIfChanged(entityId, entityDataIdsBefore, EntityDataRewriteTrace.formatSortedIds(items));
-        if (cubeRewritten != null || villagerRewritten != null || tailTrimmed != null) {
+        if (cubeRewritten != null || villagerRewritten != null || tailTrimmed != null || serializerRewritten != null) {
             return new ClientboundSetEntityDataPacket(entityId, items);
         }
         return packet;
