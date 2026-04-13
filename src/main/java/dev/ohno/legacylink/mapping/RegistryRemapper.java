@@ -14,6 +14,8 @@ import net.minecraft.world.level.block.PointedDripstoneBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.SpeleothemThickness;
 
+import java.util.Arrays;
+
 /**
  * Server-side 26.2 → 26.1 numeric remaps used on the wire. Same role as Via’s per-protocol mapping tables, but
  * scoped to this version pair: explicit {@link LegacyLinkConstants} entries plus range guards so unknown high ids
@@ -23,8 +25,9 @@ public final class RegistryRemapper {
 
     private static final Int2IntMap BLOCK_STATE_REMAP = new Int2IntOpenHashMap();
     private static final Int2IntMap ITEM_REMAP = new Int2IntOpenHashMap();
+    private static int[] blockStateToLegacy = new int[0];
 
-    /** Server registry id for {@link Blocks#STONE} default state — written to legacy clients as the generic fallback. */
+    /** Legacy wire-id fallback (mapped stone id) for 26.1 clients. */
     private static int fallbackBlockStateId = 1;
     private static final Item FALLBACK_ITEM = Items.STONE;
 
@@ -32,31 +35,58 @@ public final class RegistryRemapper {
         BLOCK_STATE_REMAP.clear();
         ITEM_REMAP.clear();
 
-        int stoneStateId = Block.BLOCK_STATE_REGISTRY.getId(Blocks.STONE.defaultBlockState());
-        fallbackBlockStateId = stoneStateId;
+        // Via-style blockstate wire-id mapping:
+        // iterate the full 26.2 blockstate registry and assign sequential legacy IDs while skipping
+        // 26.2-only states. This keeps all vanilla shared states (e.g. deepslate) stable instead of
+        // flattening by range checks.
+        int stateRegistrySize = Block.BLOCK_STATE_REGISTRY.size();
+        int[] legacyTable = new int[stateRegistrySize];
+        Arrays.fill(legacyTable, -1);
+        int nextLegacyId = 0;
 
         for (Block block : BuiltInRegistries.BLOCK) {
             Identifier blockId = BuiltInRegistries.BLOCK.getKey(block);
-            if (blockId != null && LegacyLinkConstants.SULFUR_BLOCK_IDS.contains(blockId.toString())) {
-                for (BlockState state : block.getStateDefinition().getPossibleStates()) {
-                    int id = Block.BLOCK_STATE_REGISTRY.getId(state);
-                    BLOCK_STATE_REMAP.put(id, stoneStateId);
+            for (BlockState state : block.getStateDefinition().getPossibleStates()) {
+                int stateId = Block.BLOCK_STATE_REGISTRY.getId(state);
+                if (is26_2OnlyBlockState(blockId, state)) {
+                    continue;
                 }
-                LegacyLinkMod.LOGGER.debug("[LegacyLink] Mapped block {} -> stone", blockId);
+                legacyTable[stateId] = nextLegacyId++;
             }
         }
 
-        // 26.1.1 cannot decode pointed_dripstone tip_merge states (observed ids 30205/30207).
-        // Map them to stone to guarantee a legacy-safe wire id.
+        int stoneStateId = Block.BLOCK_STATE_REGISTRY.getId(Blocks.STONE.defaultBlockState());
+        int stoneLegacyId = (stoneStateId >= 0 && stoneStateId < legacyTable.length)
+                ? legacyTable[stoneStateId] : 1;
+        if (stoneLegacyId < 0) {
+            stoneLegacyId = 1;
+        }
+        fallbackBlockStateId = stoneLegacyId;
+
+        BLOCK_STATE_REMAP.clear();
+        for (int i = 0; i < legacyTable.length; i++) {
+            if (legacyTable[i] < 0) {
+                legacyTable[i] = stoneLegacyId;
+            }
+            if (legacyTable[i] != i) {
+                BLOCK_STATE_REMAP.put(i, legacyTable[i]);
+            }
+        }
+        blockStateToLegacy = legacyTable;
+
+        if (nextLegacyId != LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID + 1) {
+            LegacyLinkMod.LOGGER.warn(
+                    "[LegacyLink] Legacy blockstate count {} does not match expected {} — check 26.2-only blockstate detection",
+                    nextLegacyId, LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID + 1
+            );
+        }
+
+        // 26.1.1 cannot decode pointed_dripstone tip_merge states; pin to legacy stone fallback.
         for (BlockState state : Blocks.POINTED_DRIPSTONE.getStateDefinition().getPossibleStates()) {
             if (state.getValue(PointedDripstoneBlock.THICKNESS) == SpeleothemThickness.TIP_MERGE) {
                 int fromId = Block.BLOCK_STATE_REGISTRY.getId(state);
-                int toId = stoneStateId;
+                int toId = stoneLegacyId;
                 BLOCK_STATE_REMAP.put(fromId, toId);
-                LegacyLinkMod.LOGGER.debug(
-                        "[LegacyLink] Mapped pointed_dripstone {}({}) -> stone({})",
-                        state, fromId, toId
-                );
             }
         }
 
@@ -78,12 +108,12 @@ public final class RegistryRemapper {
     }
 
     public static int remapBlockState(int stateId) {
-        int mapped = BLOCK_STATE_REMAP.getOrDefault(stateId, stateId);
-        BlockState atId = Block.BLOCK_STATE_REGISTRY.byId(mapped);
-        if (atId == null) {
+        int[] table = blockStateToLegacy;
+        if (stateId < 0 || stateId >= table.length) {
             return fallbackBlockStateId;
         }
-        return mapped;
+        int mapped = table[stateId];
+        return mapped >= 0 ? mapped : fallbackBlockStateId;
     }
 
     /**
@@ -102,7 +132,11 @@ public final class RegistryRemapper {
     }
 
     public static boolean needsBlockRemap(int stateId) {
-        return BLOCK_STATE_REMAP.containsKey(stateId);
+        int[] table = blockStateToLegacy;
+        if (stateId < 0 || stateId >= table.length) {
+            return true;
+        }
+        return table[stateId] != stateId;
     }
 
     public static int blockStateRemapCount() {
@@ -114,4 +148,15 @@ public final class RegistryRemapper {
     }
 
     private RegistryRemapper() {}
+
+    private static boolean is26_2OnlyBlockState(Identifier blockId, BlockState state) {
+        if (blockId == null) {
+            return true;
+        }
+        if (LegacyLinkConstants.SULFUR_BLOCK_IDS.contains(blockId.toString())) {
+            return true;
+        }
+        return state.getBlock() == Blocks.POINTED_DRIPSTONE
+                && state.getValue(PointedDripstoneBlock.THICKNESS) == SpeleothemThickness.TIP_MERGE;
+    }
 }
