@@ -14,7 +14,10 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -31,6 +34,9 @@ import java.util.Map;
 public final class RegistryRemapper {
 
     private static final Gson GSON = new Gson();
+    private static final String LEGACY_STATE_MAP_RESOURCE = "/legacylink/mappings/legacy-state-to-id-26.1.2.json";
+    private static final String SNAPSHOT_STATE_MAP_RESOURCE = "/legacylink/mappings/snapshot-id-to-state-26.2-snapshot-3.json";
+    private static final String LEGACY_ITEM_MAP_RESOURCE = "/legacylink/mappings/legacy-item-protocol-map-26.1.2.csv";
     private static final String LEGACY_STATE_MAP_OVERRIDE = System.getProperty("legacylink.legacyStateMap");
     private static final String SNAPSHOT_STATE_MAP_OVERRIDE = System.getProperty("legacylink.snapshotStateMap");
     private static final String LEGACY_ITEM_MAP_OVERRIDE = System.getProperty("legacylink.legacyItemMap");
@@ -167,90 +173,88 @@ public final class RegistryRemapper {
     }
 
     private static Map<String, Integer> loadLegacyStateIdMap() {
-        Path path = resolveExistingPath(LEGACY_STATE_MAP_OVERRIDE, List.of(
-                "reaper-ac/mapping-artifacts/26.1.2-stable/state-to-id-26.1.2-stable.json",
-                "../reaper-ac/mapping-artifacts/26.1.2-stable/state-to-id-26.1.2-stable.json",
-                "../../reaper-ac/mapping-artifacts/26.1.2-stable/state-to-id-26.1.2-stable.json"
-        ));
-        try {
-            String json = Files.readString(path, StandardCharsets.UTF_8);
-            Type type = new TypeToken<LinkedHashMap<String, Integer>>() {}.getType();
-            Map<String, Integer> map = GSON.fromJson(json, type);
-            if (map == null || map.isEmpty()) {
-                throw new IllegalStateException("[LegacyLink] Legacy state map is empty: " + path);
-            }
-            return map;
-        } catch (IOException e) {
-            throw new IllegalStateException("[LegacyLink] Failed reading legacy state map from " + path, e);
+        Type type = new TypeToken<LinkedHashMap<String, Integer>>() {}.getType();
+        Map<String, Integer> map = loadJsonMap(LEGACY_STATE_MAP_OVERRIDE, LEGACY_STATE_MAP_RESOURCE, type, "legacy state map");
+        if (map == null || map.isEmpty()) {
+            throw new IllegalStateException("[LegacyLink] Legacy state map is empty");
         }
+        return map;
     }
 
     private static Map<String, String> loadSnapshotStateByIdMap() {
-        Path path = resolveExistingPath(SNAPSHOT_STATE_MAP_OVERRIDE, List.of(
-                "reaper-ac/mapping-artifacts/26.2-snapshot-3/id-to-state-26.2-snapshot-3.json",
-                "../reaper-ac/mapping-artifacts/26.2-snapshot-3/id-to-state-26.2-snapshot-3.json",
-                "../../reaper-ac/mapping-artifacts/26.2-snapshot-3/id-to-state-26.2-snapshot-3.json"
-        ));
-        try {
-            String json = Files.readString(path, StandardCharsets.UTF_8);
-            Type type = new TypeToken<LinkedHashMap<String, String>>() {}.getType();
-            Map<String, String> map = GSON.fromJson(json, type);
-            if (map == null || map.isEmpty()) {
-                throw new IllegalStateException("[LegacyLink] Snapshot id->state map is empty: " + path);
-            }
-            return map;
-        } catch (IOException e) {
-            throw new IllegalStateException("[LegacyLink] Failed reading snapshot id->state map from " + path, e);
+        Type type = new TypeToken<LinkedHashMap<String, String>>() {}.getType();
+        Map<String, String> map = loadJsonMap(SNAPSHOT_STATE_MAP_OVERRIDE, SNAPSHOT_STATE_MAP_RESOURCE, type, "snapshot id->state map");
+        if (map == null || map.isEmpty()) {
+            throw new IllegalStateException("[LegacyLink] Snapshot id->state map is empty");
         }
+        return map;
     }
 
     private static Map<String, Integer> loadLegacyItemIdMap() {
-        Path path = resolveExistingPath(LEGACY_ITEM_MAP_OVERRIDE, List.of(
-                "reaper-ac/mapping-artifacts/26.1.2-stable/item-protocol-map-26.1.2-stable.csv",
-                "../reaper-ac/mapping-artifacts/26.1.2-stable/item-protocol-map-26.1.2-stable.csv",
-                "../../reaper-ac/mapping-artifacts/26.1.2-stable/item-protocol-map-26.1.2-stable.csv"
-        ));
-        try {
-            List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
-            Map<String, Integer> out = new LinkedHashMap<>();
-            for (String line : lines) {
-                if (line == null || line.isBlank() || line.startsWith("item,")) {
-                    continue;
-                }
-                int comma = line.lastIndexOf(',');
-                if (comma <= 0 || comma >= line.length() - 1) {
-                    continue;
-                }
-                String key = line.substring(0, comma).trim();
-                String idRaw = line.substring(comma + 1).trim();
-                if (!idRaw.chars().allMatch(Character::isDigit)) {
-                    continue;
-                }
-                out.put(key, Integer.parseInt(idRaw));
+        List<String> lines = loadTextLines(LEGACY_ITEM_MAP_OVERRIDE, LEGACY_ITEM_MAP_RESOURCE, "legacy item map");
+        Map<String, Integer> out = new LinkedHashMap<>();
+        for (String line : lines) {
+            if (line == null || line.isBlank() || line.startsWith("item,")) {
+                continue;
             }
-            if (out.isEmpty()) {
-                throw new IllegalStateException("[LegacyLink] Legacy item map is empty: " + path);
+            int comma = line.lastIndexOf(',');
+            if (comma <= 0 || comma >= line.length() - 1) {
+                continue;
             }
-            return out;
+            String key = line.substring(0, comma).trim();
+            String idRaw = line.substring(comma + 1).trim();
+            if (!idRaw.chars().allMatch(Character::isDigit)) {
+                continue;
+            }
+            out.put(key, Integer.parseInt(idRaw));
+        }
+        if (out.isEmpty()) {
+            throw new IllegalStateException("[LegacyLink] Legacy item map is empty");
+        }
+        return out;
+    }
+
+    private static <T> T loadJsonMap(String override, String resourcePath, Type type, String label) {
+        String json = loadTextBlob(override, resourcePath, label);
+        T map = GSON.fromJson(json, type);
+        if (map == null) {
+            throw new IllegalStateException("[LegacyLink] Parsed null for " + label);
+        }
+        return map;
+    }
+
+    private static List<String> loadTextLines(String override, String resourcePath, String label) {
+        String blob = loadTextBlob(override, resourcePath, label);
+        return blob.lines().toList();
+    }
+
+    private static String loadTextBlob(String override, String resourcePath, String label) {
+        if (override != null && !override.isBlank()) {
+            Path p = Path.of(override);
+            if (!Files.exists(p)) {
+                throw new IllegalStateException("[LegacyLink] Mapping override path does not exist: " + override);
+            }
+            try {
+                return Files.readString(p, StandardCharsets.UTF_8);
+            } catch (IOException e) {
+                throw new IllegalStateException("[LegacyLink] Failed reading override " + label + " from " + p, e);
+            }
+        }
+        try (InputStream in = RegistryRemapper.class.getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                throw new IllegalStateException("[LegacyLink] Missing bundled " + label + " resource: " + resourcePath);
+            }
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line).append('\n');
+                }
+            }
+            return sb.toString();
         } catch (IOException e) {
-            throw new IllegalStateException("[LegacyLink] Failed reading legacy item map from " + path, e);
+            throw new IllegalStateException("[LegacyLink] Failed reading bundled " + label + " resource: " + resourcePath, e);
         }
     }
 
-    private static Path resolveExistingPath(String override, List<String> candidates) {
-        if (override != null && !override.isBlank()) {
-            Path p = Path.of(override);
-            if (Files.exists(p)) {
-                return p;
-            }
-            throw new IllegalStateException("[LegacyLink] Mapping override path does not exist: " + override);
-        }
-        for (String candidate : candidates) {
-            Path p = Path.of(candidate);
-            if (Files.exists(p)) {
-                return p;
-            }
-        }
-        throw new IllegalStateException("[LegacyLink] Could not locate required mapping artifact. Tried: " + candidates);
-    }
 }
