@@ -31,6 +31,9 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
 import net.minecraft.core.Holder;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.Connection;
@@ -46,6 +49,7 @@ import net.minecraft.network.protocol.game.ClientboundBundlePacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
+import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
@@ -95,6 +99,12 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private static final String HANDLER_NAME = "legacylink";
     private static final EntityType<?> LEGACY_SLIME_TYPE = resolveEntityType("minecraft:slime");
+    private static final Map<String, SimpleParticleType> LEGACY_PARTICLE_FALLBACKS = Map.of(
+            "minecraft:noxious_gas", ParticleTypes.SMOKE,
+            "minecraft:noxious_gas_cloud", ParticleTypes.CLOUD,
+            "minecraft:sulfur_bubbles", ParticleTypes.BUBBLE,
+            "minecraft:sulfur_cube_goo", ParticleTypes.ITEM_SLIME
+    );
 
     private static final Constructor<ClientboundUpdateAttributesPacket> UPDATE_ATTRIBUTES_REBUILD_CTOR;
     private static final Field TAGS_NETWORK_PAYLOAD_TAGS_FIELD;
@@ -370,6 +380,9 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         if (msg instanceof ClientboundUpdateTagsPacket tagsPacket) {
             return remapUpdateTags(tagsPacket);
         }
+        if (msg instanceof ClientboundLevelParticlesPacket levelParticles) {
+            return remapLevelParticles(levelParticles);
+        }
         return msg;
     }
 
@@ -532,6 +545,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         boolean changed = false;
         boolean attributeRegistry = Registries.ATTRIBUTE.equals(registryKey);
         boolean entityTypeRegistry = Registries.ENTITY_TYPE.equals(registryKey);
+        boolean particleRegistry = Registries.PARTICLE_TYPE.equals(registryKey);
         int legacyAttributeStrips = 0;
         List<String> removedEntryIds = new ArrayList<>();
 
@@ -542,6 +556,8 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
             boolean strip26_2OnlyAttribute =
                     attributeRegistry && LegacyLinkConstants.LEGACY_UNSUPPORTED_ATTRIBUTE_IDS.contains(entryId);
+            boolean strip26_2OnlyParticle =
+                    particleRegistry && LegacyLinkConstants.LEGACY_UNSUPPORTED_PARTICLE_IDS.contains(entryId);
             /*
              * {@code minecraft:sulfur_cube} is 26.2-only; drop it from entity_type sync so 26.1 never decodes it.
              * That renumbers following vanilla types on the wire — {@link dev.ohno.legacylink.mixin.ClientboundAddEntityPacketMixin}
@@ -558,6 +574,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                     || entryId.contains("sulfur"));
             if (stripSulfurCubeEntityType
                     || stripSulfurOrModEntry
+                    || strip26_2OnlyParticle
                     || strip26_2OnlyAttribute) {
                 iterator.remove();
                 changed = true;
@@ -594,6 +611,37 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             return new ClientboundRegistryDataPacket(packet.registry(), filtered);
         }
         return packet;
+    }
+
+    private ClientboundLevelParticlesPacket remapLevelParticles(ClientboundLevelParticlesPacket packet) {
+        ParticleOptions source = packet.getParticle();
+        Identifier particleId = BuiltInRegistries.PARTICLE_TYPE.getKey(source.getType());
+        if (particleId == null) {
+            return packet;
+        }
+        String key = particleId.toString();
+        if (!LegacyLinkConstants.LEGACY_UNSUPPORTED_PARTICLE_IDS.contains(key)) {
+            return packet;
+        }
+        SimpleParticleType fallback = LEGACY_PARTICLE_FALLBACKS.getOrDefault(key, ParticleTypes.SMOKE);
+        LegacyLinkMod.LOGGER.debug(
+                "[LegacyLink] Remapped unsupported 26.2 particle {} -> {} for 26.1 client",
+                key,
+                BuiltInRegistries.PARTICLE_TYPE.getKey(fallback)
+        );
+        return new ClientboundLevelParticlesPacket(
+                fallback,
+                packet.isOverrideLimiter(),
+                packet.alwaysShow(),
+                packet.getX(),
+                packet.getY(),
+                packet.getZ(),
+                packet.getXDist(),
+                packet.getYDist(),
+                packet.getZDist(),
+                packet.getMaxSpeed(),
+                packet.getCount()
+        );
     }
 
     public ClientboundSetEntityDataPacket remapEntityData(ClientboundSetEntityDataPacket packet) {
