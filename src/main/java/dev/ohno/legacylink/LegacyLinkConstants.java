@@ -4,15 +4,16 @@ import java.util.Set;
 
 public final class LegacyLinkConstants {
 
-    public static final int PROTOCOL_26_1 = 775;
-    public static final int PROTOCOL_26_2_SNAPSHOT = 1073742132;
-    // Upper bounds for 26.1.x protocol registries; anything above is treated as 26.2-only on the wire.
-    // Block state ids in chunk palettes must be valid indices in the legacy client's {@code Block.BLOCK_STATE_REGISTRY}.
-    // 26.1.1 rejects {@code id 30208} (so valid indices are {@code 0..30207}). 26.2 assigns new states at 30208+,
-    // so keep this inclusive ceiling pinned to the lowest supported 26.1.x client to avoid palette decode crashes.
-    // If LegacyLink later drops 26.1.1 support, this can be re-evaluated against the newer legacy floor.
+    // Supported bridge pair: 26.2-snapshot-3 server <-> 26.1.2 client.
+    public static final int PROTOCOL_26_1_2 = 775;
+    public static final int PROTOCOL_26_2_SNAPSHOT_3 = 1073742133;
+
+    // Upper bounds for 26.1.2 protocol registries; anything above is treated as 26.2-only on the wire.
+    // Values pinned from runtime dump on vanilla 26.1.2:
+    // - items: 1506 entries => max id 1505
+    // - block states: 29873 entries => max id 29872
     public static final int MAX_26_1_ITEM_ID = 1505;
-    public static final int MAX_26_1_BLOCKSTATE_ID = 30207;
+    public static final int MAX_26_1_BLOCKSTATE_ID = 29872;
 
     public static final Set<String> SULFUR_BLOCK_IDS = Set.of(
             "minecraft:sulfur",
@@ -41,7 +42,8 @@ public final class LegacyLinkConstants {
             "minecraft:cinnabar_brick_slab",
             "minecraft:cinnabar_brick_stairs",
             "minecraft:cinnabar_brick_wall",
-            "minecraft:chiseled_cinnabar"
+            "minecraft:chiseled_cinnabar",
+            "minecraft:sulfur_spike"
     );
 
     public static final Set<String> SULFUR_ITEM_IDS = Set.of(
@@ -72,6 +74,7 @@ public final class LegacyLinkConstants {
             "minecraft:cinnabar_brick_stairs",
             "minecraft:cinnabar_brick_wall",
             "minecraft:chiseled_cinnabar",
+            "minecraft:sulfur_spike",
             "minecraft:sulfur_cube_bucket",
             "minecraft:sulfur_cube_spawn_egg"
     );

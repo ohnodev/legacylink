@@ -7,6 +7,7 @@ import dev.ohno.legacylink.debug.SpawnPacketTrace;
 import dev.ohno.legacylink.mapping.RegistryRemapper;
 import dev.ohno.legacylink.runtime.LegacyRuntimeContext;
 import dev.ohno.legacylink.telemetry.TranslationStats;
+import net.minecraft.SharedConstants;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import org.slf4j.Logger;
@@ -19,9 +20,14 @@ public class LegacyLinkMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("[LegacyLink] Initializing protocol bridge (26.2 -> 26.1)");
+        LOGGER.info("[LegacyLink] Initializing protocol bridge (26.2-snapshot-3 -> 26.1.2)");
 
         ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            if (SharedConstants.getProtocolVersion() != LegacyLinkConstants.PROTOCOL_26_2_SNAPSHOT_3) {
+                LOGGER.warn("[LegacyLink] Disabled bridge init: server protocol {} is unsupported (expected {})",
+                        SharedConstants.getProtocolVersion(), LegacyLinkConstants.PROTOCOL_26_2_SNAPSHOT_3);
+                return;
+            }
             LegacyRuntimeContext.initialize(
                     server.registryAccess(),
                     server.overworld().palettedContainerFactory(),
@@ -39,8 +45,8 @@ public class LegacyLinkMod implements ModInitializer {
             TranslationStats.dump();
         });
 
-        LOGGER.info("[LegacyLink] Ready — 26.1 clients (protocol {}) will be accepted",
-                LegacyLinkConstants.PROTOCOL_26_1);
+        LOGGER.info("[LegacyLink] Ready — 26.1.2 clients (protocol {}) on 26.2-snapshot-3 server (protocol {})",
+                LegacyLinkConstants.PROTOCOL_26_1_2, LegacyLinkConstants.PROTOCOL_26_2_SNAPSHOT_3);
 
         if (PositionPacketTrace.enabled()) {
             LOGGER.warn("[LegacyLink] Position tracing ON (-Dlegacylink.tracePositions=true). "

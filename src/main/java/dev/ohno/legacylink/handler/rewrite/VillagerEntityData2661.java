@@ -1,8 +1,10 @@
 package dev.ohno.legacylink.handler.rewrite;
 
 import dev.ohno.legacylink.runtime.LegacyRuntimeContext;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.npc.villager.VillagerData;
@@ -27,7 +29,15 @@ public final class VillagerEntityData2661 {
     private static final int VILLAGER_DATA_26_1_VILLAGER = 18;
 
     private static boolean isVillagerLike(@Nullable EntityType<?> t) {
-        return t == EntityType.VILLAGER || t == EntityType.ZOMBIE_VILLAGER;
+        return isEntityType(t, "minecraft:villager") || isEntityType(t, "minecraft:zombie_villager");
+    }
+
+    private static boolean isEntityType(@Nullable EntityType<?> type, String id) {
+        if (type == null) {
+            return false;
+        }
+        Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+        return key != null && id.contentEquals(key.toString());
     }
 
     private VillagerEntityData2661() {}
@@ -63,7 +73,7 @@ public final class VillagerEntityData2661 {
             return stripVillagerOnlyTailSlots(packedItems, booleanSerId);
         }
 
-        boolean zombieVillager = type == EntityType.ZOMBIE_VILLAGER;
+        boolean zombieVillager = isEntityType(type, "minecraft:zombie_villager");
 
         boolean changed = false;
         List<SynchedEntityData.DataValue<?>> out = new ArrayList<>(packedItems.size());

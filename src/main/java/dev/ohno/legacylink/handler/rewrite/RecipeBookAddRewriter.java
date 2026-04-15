@@ -83,12 +83,12 @@ public final class RecipeBookAddRewriter {
         return Optional.of(remapped);
     }
 
-    private static Ingredient remapIngredient(Ingredient ingredient) {
+    public static Ingredient remapIngredient(Ingredient ingredient) {
         List<Item> remappedItems = new ArrayList<>();
         boolean changed = false;
 
         for (var holder : ingredient.items().toList()) {
-            Item mapped = ItemRewriter.remapItemToLegacySafe(holder.value());
+            Item mapped = ItemRewriter.remapItemForLegacyRegistryEncoding(holder.value());
             if (mapped != holder.value()) {
                 changed = true;
             }
@@ -178,9 +178,9 @@ public final class RecipeBookAddRewriter {
         return remapped;
     }
 
-    private static SlotDisplay remapSlotDisplay(SlotDisplay display) {
+    public static SlotDisplay remapSlotDisplay(SlotDisplay display) {
         if (display instanceof SlotDisplay.ItemSlotDisplay itemDisplay) {
-            Item mapped = ItemRewriter.remapItemToLegacySafe(itemDisplay.item().value());
+            Item mapped = ItemRewriter.remapItemForLegacyRegistryEncoding(itemDisplay.item().value());
             if (mapped == itemDisplay.item().value()) {
                 return display;
             }

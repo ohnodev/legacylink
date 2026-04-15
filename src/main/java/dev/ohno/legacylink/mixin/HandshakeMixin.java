@@ -4,6 +4,7 @@ import dev.ohno.legacylink.LegacyLinkConstants;
 import dev.ohno.legacylink.LegacyLinkMod;
 import dev.ohno.legacylink.connection.LegacyTracker;
 import dev.ohno.legacylink.handler.LegacyPacketHandler;
+import net.minecraft.SharedConstants;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
 import net.minecraft.network.protocol.login.LoginProtocols;
@@ -23,9 +24,14 @@ public abstract class HandshakeMixin {
     @Shadow @Final private MinecraftServer server;
     @Shadow @Final private Connection connection;
 
+    private static boolean isSupportedBridgePair(ClientIntentionPacket packet) {
+        return SharedConstants.getProtocolVersion() == LegacyLinkConstants.PROTOCOL_26_2_SNAPSHOT_3
+                && packet.protocolVersion() == LegacyLinkConstants.PROTOCOL_26_1_2;
+    }
+
     @Inject(method = "beginLogin", at = @At("HEAD"), cancellable = true)
     private void legacylink$acceptLegacyClient(ClientIntentionPacket packet, boolean transfer, CallbackInfo ci) {
-        if (packet.protocolVersion() == LegacyLinkConstants.PROTOCOL_26_1) {
+        if (isSupportedBridgePair(packet)) {
             LegacyLinkMod.LOGGER.info("[LegacyLink] Accepting 26.1 client from {}",
                     this.connection.getRemoteAddress());
 
@@ -41,7 +47,7 @@ public abstract class HandshakeMixin {
 
     @Inject(method = "handleIntention", at = @At("HEAD"))
     private void legacylink$markLegacyOnStatusPing(ClientIntentionPacket packet, CallbackInfo ci) {
-        if (packet.protocolVersion() == LegacyLinkConstants.PROTOCOL_26_1) {
+        if (isSupportedBridgePair(packet)) {
             LegacyTracker.markLegacy(this.connection);
             LegacyPacketHandler.install(this.connection);
         }

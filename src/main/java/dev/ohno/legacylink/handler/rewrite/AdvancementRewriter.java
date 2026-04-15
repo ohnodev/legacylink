@@ -6,9 +6,12 @@ import dev.ohno.legacylink.telemetry.TranslationStats;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.DisplayInfo;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemStackTemplate;
+import net.minecraft.world.item.Items;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +26,7 @@ public final class AdvancementRewriter {
 
         List<AdvancementHolder> rewritten = new ArrayList<>(packet.getAdded().size());
         int remappedIcons = 0;
+        int strictFallbackIcons = 0;
         int firstLegacyUnsafeItemId = -1;
 
         for (AdvancementHolder holder : packet.getAdded()) {
@@ -33,7 +37,7 @@ public final class AdvancementRewriter {
                 if (originalItemId > LegacyLinkConstants.MAX_26_1_ITEM_ID && firstLegacyUnsafeItemId == -1) {
                     firstLegacyUnsafeItemId = originalItemId;
                 }
-                ItemStackTemplate remappedIcon = ItemRewriter.remapTemplate(display.get().getIcon());
+                ItemStackTemplate remappedIcon = ensureLegacyWireSafeTemplate(display.get().getIcon());
                 if (remappedIcon != display.get().getIcon()) {
                     DisplayInfo remappedDisplay = new DisplayInfo(
                             remappedIcon,
@@ -48,6 +52,10 @@ public final class AdvancementRewriter {
                     remappedDisplay.setLocation(display.get().getX(), display.get().getY());
                     display = Optional.of(remappedDisplay);
                     remappedIcons++;
+                    ItemStack stack = remappedIcon.create();
+                    if (!stack.isEmpty() && stack.getItem() == Items.STONE && originalItemId != Item.getId(Items.STONE)) {
+                        strictFallbackIcons++;
+                    }
                 }
             }
             Advancement rebuilt = new Advancement(
@@ -61,21 +69,17 @@ public final class AdvancementRewriter {
             rewritten.add(new AdvancementHolder(holder.id(), rebuilt));
         }
 
-        if (remappedIcons == 0) {
-            if (firstLegacyUnsafeItemId != -1) {
-                LegacyLinkMod.LOGGER.info(
-                        "[LegacyLink][Trace] update_advancements rewritten icons={} first_bad_item_id={}",
-                        remappedIcons,
-                        firstLegacyUnsafeItemId
-                );
-            }
+        if (remappedIcons == 0 && strictFallbackIcons == 0) {
             return packet;
         }
 
-        TranslationStats.recordAdvancementsRemapped(remappedIcons);
+        if (remappedIcons > 0) {
+            TranslationStats.recordAdvancementsRemapped(remappedIcons);
+        }
         LegacyLinkMod.LOGGER.info(
-                "[LegacyLink][Trace] update_advancements rewritten icons={} first_bad_item_id={}",
+                "[LegacyLink][Trace] update_advancements rewritten_icons={} strict_fallback_icons={} first_bad_item_id={}",
                 remappedIcons,
+                strictFallbackIcons,
                 firstLegacyUnsafeItemId
         );
 
@@ -86,6 +90,31 @@ public final class AdvancementRewriter {
                 packet.getProgress(),
                 packet.shouldShowAdvancements()
         );
+    }
+
+    private static ItemStackTemplate ensureLegacyWireSafeTemplate(ItemStackTemplate template) {
+        ItemStackTemplate remapped = ItemRewriter.remapTemplate(template);
+        ItemStack stack = remapped.create();
+        if (stack.isEmpty()) {
+            return remapped;
+        }
+        Item registrySafe = ItemRewriter.remapItemForLegacyRegistryEncoding(stack.getItem());
+        if (registrySafe != stack.getItem()) {
+            remapped = ItemStackTemplate.fromNonEmptyStack(
+                    new ItemStack(registrySafe.builtInRegistryHolder(), stack.getCount(), stack.getComponentsPatch())
+            );
+            stack = remapped.create();
+        }
+        int serverItemId = Item.getId(stack.getItem());
+        int legacyWireId = ItemRewriter.remapItemIdStrict(serverItemId);
+        if (legacyWireId >= 0 && legacyWireId <= LegacyLinkConstants.MAX_26_1_ITEM_ID) {
+            return remapped;
+        }
+        Item fallback = BuiltInRegistries.ITEM.byId(ItemRewriter.remapItemIdStrict(Item.getId(Items.STONE)));
+        if (fallback == null) {
+            fallback = Items.STONE;
+        }
+        return ItemStackTemplate.fromNonEmptyStack(new ItemStack(fallback));
     }
 
     private AdvancementRewriter() {}

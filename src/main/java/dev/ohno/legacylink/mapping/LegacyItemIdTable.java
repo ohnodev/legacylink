@@ -3,7 +3,6 @@ package dev.ohno.legacylink.mapping;
 import dev.ohno.legacylink.LegacyLinkConstants;
 import dev.ohno.legacylink.LegacyLinkMod;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 
@@ -37,43 +36,42 @@ public final class LegacyItemIdTable {
     public static void rebuild() {
         int size = BuiltInRegistries.ITEM.size();
         int[] table = new int[size];
-        int nextLegacyId = 0;
+        int maxLegacyIdSeen = -1;
         stoneServerItemId = Item.getId(Items.STONE);
+        int stoneLegacyId = RegistryRemapper.legacyItemIdByRegistryKeyOrFallback("minecraft:stone");
 
-        for (Item item : BuiltInRegistries.ITEM) {
-            int serverId = Item.getId(item);
-            if (is26_2Only(item)) {
-                table[serverId] = -1;
-            } else {
-                table[serverId] = nextLegacyId;
-                nextLegacyId++;
+        for (int serverId = 0; serverId < size; serverId++) {
+            Item item = BuiltInRegistries.ITEM.byId(serverId);
+            String registryKey = "";
+            if (item != null) {
+                var key = BuiltInRegistries.ITEM.getKey(item);
+                registryKey = key == null ? "" : key.toString();
+            }
+            int mappedLegacy = RegistryRemapper.legacyItemIdByRegistryKeyOrFallback(registryKey);
+            table[serverId] = mappedLegacy;
+            if (mappedLegacy > maxLegacyIdSeen) {
+                maxLegacyIdSeen = mappedLegacy;
             }
         }
 
         int stoneLegacy = (stoneServerItemId >= 0 && stoneServerItemId < table.length)
-                ? table[stoneServerItemId] : 1;
+                ? table[stoneServerItemId] : stoneLegacyId;
         if (stoneLegacy < 0) stoneLegacy = 1;
-
-        for (int i = 0; i < table.length; i++) {
-            if (table[i] < 0) {
-                table[i] = stoneLegacy;
-            }
-        }
 
         toLegacy = table;
         legacyStoneId = stoneLegacy;
-        legacyCount = nextLegacyId;
+        legacyCount = Math.max(maxLegacyIdSeen + 1, LegacyLinkConstants.MAX_26_1_ITEM_ID + 1);
 
-        legacyToServer = buildLegacyToServerInverse(table, nextLegacyId, stoneServerItemId);
+        legacyToServer = buildLegacyToServerInverse(table, legacyCount, stoneServerItemId);
 
         LegacyLinkMod.LOGGER.info(
                 "[LegacyLink] Item wire-ID table built: {} server items → {} legacy IDs (expected legacy max {})",
-                size, nextLegacyId, LegacyLinkConstants.MAX_26_1_ITEM_ID);
+                size, legacyCount, LegacyLinkConstants.MAX_26_1_ITEM_ID);
 
-        if (nextLegacyId != LegacyLinkConstants.MAX_26_1_ITEM_ID + 1) {
+        if (legacyCount != LegacyLinkConstants.MAX_26_1_ITEM_ID + 1) {
             LegacyLinkMod.LOGGER.warn(
                     "[LegacyLink] Legacy item count {} does not match expected {} — check 26.2-only item detection",
-                    nextLegacyId, LegacyLinkConstants.MAX_26_1_ITEM_ID + 1
+                    legacyCount, LegacyLinkConstants.MAX_26_1_ITEM_ID + 1
             );
         }
     }
@@ -137,11 +135,4 @@ public final class LegacyItemIdTable {
         return inv[legacyWireId];
     }
 
-    private static boolean is26_2Only(Item item) {
-        Identifier key = BuiltInRegistries.ITEM.getKey(item);
-        if (key == null) {
-            return true;
-        }
-        return LegacyLinkConstants.is26_2OnlyItemId(key.toString());
-    }
 }

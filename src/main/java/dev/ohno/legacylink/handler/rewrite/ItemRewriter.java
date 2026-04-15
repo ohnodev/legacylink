@@ -3,6 +3,7 @@ package dev.ohno.legacylink.handler.rewrite;
 import dev.ohno.legacylink.mapping.RegistryRemapper;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemStackTemplate;
@@ -18,10 +19,26 @@ import java.util.List;
  */
 public final class ItemRewriter {
 
-    public static Item remapItemToLegacySafe(Item item) {
+    /**
+     * For registry-encoded packet payloads (recipes, slot displays): convert to the server item that sits
+     * at the legacy client's expected wire index.
+     */
+    public static Item remapItemForLegacyRegistryEncoding(Item item) {
         int mappedId = RegistryRemapper.remapItem(Item.getId(item));
         Item mapped = BuiltInRegistries.ITEM.byId(mappedId);
         return mapped != null ? mapped : Items.STONE;
+    }
+
+    /**
+     * For item-stack semantics: preserve item identity when the legacy client knows this registry key,
+     * otherwise fall back to stone.
+     */
+    public static Item remapItemToLegacySafe(Item item) {
+        Identifier key = BuiltInRegistries.ITEM.getKey(item);
+        if (key != null && RegistryRemapper.hasLegacyItemRegistryKey(key.toString())) {
+            return item;
+        }
+        return Items.STONE;
     }
 
     public static ItemStackTemplate remapTemplate(ItemStackTemplate template) {

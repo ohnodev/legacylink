@@ -2,6 +2,8 @@ package dev.ohno.legacylink.mapping;
 
 import dev.ohno.legacylink.LegacyLinkConstants;
 import dev.ohno.legacylink.LegacyLinkMod;
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -10,11 +12,16 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.PointedDripstoneBlock;
 import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.SpeleothemThickness;
 
-import java.util.Arrays;
+import java.io.IOException;
+import java.lang.reflect.Type;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Server-side 26.2 → 26.1 numeric remaps used on the wire. Same role as Via’s per-protocol mapping tables, but
@@ -23,79 +30,73 @@ import java.util.Arrays;
  */
 public final class RegistryRemapper {
 
+    private static final Gson GSON = new Gson();
+    private static final String LEGACY_STATE_MAP_OVERRIDE = System.getProperty("legacylink.legacyStateMap");
+    private static final String SNAPSHOT_STATE_MAP_OVERRIDE = System.getProperty("legacylink.snapshotStateMap");
+    private static final String LEGACY_ITEM_MAP_OVERRIDE = System.getProperty("legacylink.legacyItemMap");
     private static final Int2IntMap BLOCK_STATE_REMAP = new Int2IntOpenHashMap();
     private static final Int2IntMap ITEM_REMAP = new Int2IntOpenHashMap();
     private static int[] blockStateToLegacy = new int[0];
+    private static Map<String, Integer> legacyStateIdByString = Map.of();
+    private static Map<String, String> snapshotStateById = Map.of();
+    private static Map<String, Integer> legacyItemIdByString = Map.of();
 
     /** Legacy wire-id fallback (mapped stone id) for 26.1 clients. */
     private static int fallbackBlockStateId = 1;
     private static final Item FALLBACK_ITEM = Items.STONE;
 
     public static void buildMappings() {
+        legacyStateIdByString = loadLegacyStateIdMap();
+        snapshotStateById = loadSnapshotStateByIdMap();
+        legacyItemIdByString = loadLegacyItemIdMap();
+
         BLOCK_STATE_REMAP.clear();
         ITEM_REMAP.clear();
 
-        // Via-style blockstate wire-id mapping:
-        // iterate the full 26.2 blockstate registry and assign sequential legacy IDs while skipping
-        // 26.2-only states. This keeps all vanilla shared states (e.g. deepslate) stable instead of
-        // flattening by range checks.
         int stateRegistrySize = Block.BLOCK_STATE_REGISTRY.size();
         int[] legacyTable = new int[stateRegistrySize];
-        Arrays.fill(legacyTable, -1);
-        int nextLegacyId = 0;
-
-        for (Block block : BuiltInRegistries.BLOCK) {
-            Identifier blockId = BuiltInRegistries.BLOCK.getKey(block);
-            for (BlockState state : block.getStateDefinition().getPossibleStates()) {
-                int stateId = Block.BLOCK_STATE_REGISTRY.getId(state);
-                if (is26_2OnlyBlockState(blockId, state)) {
-                    continue;
-                }
-                legacyTable[stateId] = nextLegacyId++;
-            }
-        }
 
         int stoneStateId = Block.BLOCK_STATE_REGISTRY.getId(Blocks.STONE.defaultBlockState());
-        int stoneLegacyId = (stoneStateId >= 0 && stoneStateId < legacyTable.length)
-                ? legacyTable[stoneStateId] : 1;
-        if (stoneLegacyId < 0) {
-            stoneLegacyId = 1;
+        if (stoneStateId < 0 || stoneStateId >= legacyTable.length) {
+            stoneStateId = 1;
         }
-        fallbackBlockStateId = stoneLegacyId;
+        fallbackBlockStateId = stoneStateId;
 
         BLOCK_STATE_REMAP.clear();
-        for (int i = 0; i < legacyTable.length; i++) {
-            if (legacyTable[i] < 0) {
-                legacyTable[i] = stoneLegacyId;
-            }
-            if (legacyTable[i] != i) {
-                BLOCK_STATE_REMAP.put(i, legacyTable[i]);
+        int legacyMaxStateId = LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID;
+        for (int stateId = 0; stateId < legacyTable.length; stateId++) {
+            legacyTable[stateId] = stoneStateId;
+        }
+
+        for (Block block : BuiltInRegistries.BLOCK) {
+            for (BlockState state : block.getStateDefinition().getPossibleStates()) {
+                int stateId = Block.BLOCK_STATE_REGISTRY.getId(state);
+                String stateKey = snapshotStateById.getOrDefault(Integer.toString(stateId), state.toString());
+                Integer mappedLegacyId = legacyStateIdByString.get(stateKey);
+                int target = mappedLegacyId == null ? stoneStateId : mappedLegacyId;
+                if (target < 0 || target > legacyMaxStateId) {
+                    target = stoneStateId;
+                }
+                legacyTable[stateId] = target;
+                if (target != stateId) {
+                    BLOCK_STATE_REMAP.put(stateId, target);
+                }
             }
         }
+
         blockStateToLegacy = legacyTable;
 
-        if (nextLegacyId != LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID + 1) {
-            LegacyLinkMod.LOGGER.warn(
-                    "[LegacyLink] Legacy blockstate count {} does not match expected {} — check 26.2-only blockstate detection",
-                    nextLegacyId, LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID + 1
-            );
-        }
-
-        // 26.1.1 cannot decode pointed_dripstone tip_merge states; pin to legacy stone fallback.
-        for (BlockState state : Blocks.POINTED_DRIPSTONE.getStateDefinition().getPossibleStates()) {
-            if (state.getValue(PointedDripstoneBlock.THICKNESS) == SpeleothemThickness.TIP_MERGE) {
-                int fromId = Block.BLOCK_STATE_REGISTRY.getId(state);
-                int toId = stoneLegacyId;
-                BLOCK_STATE_REMAP.put(fromId, toId);
-            }
-        }
-
-        int stoneItemId = Item.getId(Items.STONE);
+        int stoneItemId = legacyItemIdByString.getOrDefault("minecraft:stone", Item.getId(Items.STONE));
         for (Item item : BuiltInRegistries.ITEM) {
             Identifier itemId = BuiltInRegistries.ITEM.getKey(item);
-            if (itemId != null && LegacyLinkConstants.SULFUR_ITEM_IDS.contains(itemId.toString())) {
-                ITEM_REMAP.put(Item.getId(item), stoneItemId);
-                LegacyLinkMod.LOGGER.debug("[LegacyLink] Mapped item {} -> stone", itemId);
+            int serverItemId = Item.getId(item);
+            String key = itemId == null ? "" : itemId.toString();
+            int mapped = legacyItemIdByString.getOrDefault(key, stoneItemId);
+            if (mapped < 0 || mapped > LegacyLinkConstants.MAX_26_1_ITEM_ID) {
+                mapped = stoneItemId;
+            }
+            if (mapped != serverItemId) {
+                ITEM_REMAP.put(serverItemId, mapped);
             }
         }
 
@@ -113,7 +114,10 @@ public final class RegistryRemapper {
             return fallbackBlockStateId;
         }
         int mapped = table[stateId];
-        return mapped >= 0 ? mapped : fallbackBlockStateId;
+        if (mapped < 0 || mapped > LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID) {
+            return fallbackBlockStateId;
+        }
+        return mapped;
     }
 
     /**
@@ -149,14 +153,104 @@ public final class RegistryRemapper {
 
     private RegistryRemapper() {}
 
-    private static boolean is26_2OnlyBlockState(Identifier blockId, BlockState state) {
-        if (blockId == null) {
-            return true;
+    static int legacyItemIdByRegistryKeyOrFallback(String registryId) {
+        int stone = legacyItemIdByString.getOrDefault("minecraft:stone", Item.getId(Items.STONE));
+        int mapped = legacyItemIdByString.getOrDefault(registryId, stone);
+        if (mapped < 0 || mapped > LegacyLinkConstants.MAX_26_1_ITEM_ID) {
+            return stone;
         }
-        if (LegacyLinkConstants.SULFUR_BLOCK_IDS.contains(blockId.toString())) {
-            return true;
+        return mapped;
+    }
+
+    public static boolean hasLegacyItemRegistryKey(String registryId) {
+        return legacyItemIdByString.containsKey(registryId);
+    }
+
+    private static Map<String, Integer> loadLegacyStateIdMap() {
+        Path path = resolveExistingPath(LEGACY_STATE_MAP_OVERRIDE, List.of(
+                "reaper-ac/mapping-artifacts/26.1.2-stable/state-to-id-26.1.2-stable.json",
+                "../reaper-ac/mapping-artifacts/26.1.2-stable/state-to-id-26.1.2-stable.json",
+                "../../reaper-ac/mapping-artifacts/26.1.2-stable/state-to-id-26.1.2-stable.json"
+        ));
+        try {
+            String json = Files.readString(path, StandardCharsets.UTF_8);
+            Type type = new TypeToken<LinkedHashMap<String, Integer>>() {}.getType();
+            Map<String, Integer> map = GSON.fromJson(json, type);
+            if (map == null || map.isEmpty()) {
+                throw new IllegalStateException("[LegacyLink] Legacy state map is empty: " + path);
+            }
+            return map;
+        } catch (IOException e) {
+            throw new IllegalStateException("[LegacyLink] Failed reading legacy state map from " + path, e);
         }
-        return state.getBlock() == Blocks.POINTED_DRIPSTONE
-                && state.getValue(PointedDripstoneBlock.THICKNESS) == SpeleothemThickness.TIP_MERGE;
+    }
+
+    private static Map<String, String> loadSnapshotStateByIdMap() {
+        Path path = resolveExistingPath(SNAPSHOT_STATE_MAP_OVERRIDE, List.of(
+                "reaper-ac/mapping-artifacts/26.2-snapshot-3/id-to-state-26.2-snapshot-3.json",
+                "../reaper-ac/mapping-artifacts/26.2-snapshot-3/id-to-state-26.2-snapshot-3.json",
+                "../../reaper-ac/mapping-artifacts/26.2-snapshot-3/id-to-state-26.2-snapshot-3.json"
+        ));
+        try {
+            String json = Files.readString(path, StandardCharsets.UTF_8);
+            Type type = new TypeToken<LinkedHashMap<String, String>>() {}.getType();
+            Map<String, String> map = GSON.fromJson(json, type);
+            if (map == null || map.isEmpty()) {
+                throw new IllegalStateException("[LegacyLink] Snapshot id->state map is empty: " + path);
+            }
+            return map;
+        } catch (IOException e) {
+            throw new IllegalStateException("[LegacyLink] Failed reading snapshot id->state map from " + path, e);
+        }
+    }
+
+    private static Map<String, Integer> loadLegacyItemIdMap() {
+        Path path = resolveExistingPath(LEGACY_ITEM_MAP_OVERRIDE, List.of(
+                "reaper-ac/mapping-artifacts/26.1.2-stable/item-protocol-map-26.1.2-stable.csv",
+                "../reaper-ac/mapping-artifacts/26.1.2-stable/item-protocol-map-26.1.2-stable.csv",
+                "../../reaper-ac/mapping-artifacts/26.1.2-stable/item-protocol-map-26.1.2-stable.csv"
+        ));
+        try {
+            List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+            Map<String, Integer> out = new LinkedHashMap<>();
+            for (String line : lines) {
+                if (line == null || line.isBlank() || line.startsWith("item,")) {
+                    continue;
+                }
+                int comma = line.lastIndexOf(',');
+                if (comma <= 0 || comma >= line.length() - 1) {
+                    continue;
+                }
+                String key = line.substring(0, comma).trim();
+                String idRaw = line.substring(comma + 1).trim();
+                if (!idRaw.chars().allMatch(Character::isDigit)) {
+                    continue;
+                }
+                out.put(key, Integer.parseInt(idRaw));
+            }
+            if (out.isEmpty()) {
+                throw new IllegalStateException("[LegacyLink] Legacy item map is empty: " + path);
+            }
+            return out;
+        } catch (IOException e) {
+            throw new IllegalStateException("[LegacyLink] Failed reading legacy item map from " + path, e);
+        }
+    }
+
+    private static Path resolveExistingPath(String override, List<String> candidates) {
+        if (override != null && !override.isBlank()) {
+            Path p = Path.of(override);
+            if (Files.exists(p)) {
+                return p;
+            }
+            throw new IllegalStateException("[LegacyLink] Mapping override path does not exist: " + override);
+        }
+        for (String candidate : candidates) {
+            Path p = Path.of(candidate);
+            if (Files.exists(p)) {
+                return p;
+            }
+        }
+        throw new IllegalStateException("[LegacyLink] Could not locate required mapping artifact. Tried: " + candidates);
     }
 }
