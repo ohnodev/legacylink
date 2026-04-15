@@ -45,13 +45,21 @@ public abstract class PacketEncoderMixin<T extends PacketListener> {
         Field sectionPosField;
         try {
             statesField = ClientboundSectionBlocksUpdatePacket.class.getDeclaredField("states");
-            statesField.setAccessible(true);
+            try {
+                statesField.setAccessible(true);
+            } catch (RuntimeException e) {
+                statesField = null;
+            }
         } catch (NoSuchFieldException e) {
             statesField = null;
         }
         try {
             sectionPosField = ClientboundSectionBlocksUpdatePacket.class.getDeclaredField("sectionPos");
-            sectionPosField.setAccessible(true);
+            try {
+                sectionPosField.setAccessible(true);
+            } catch (RuntimeException e) {
+                sectionPosField = null;
+            }
         } catch (NoSuchFieldException e) {
             sectionPosField = null;
         }

@@ -6,7 +6,6 @@ import dev.ohno.legacylink.telemetry.TranslationStats;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.AdvancementHolder;
 import net.minecraft.advancements.DisplayInfo;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -110,10 +109,7 @@ public final class AdvancementRewriter {
         if (RegistryRemapper.isLegacyItemWireId(legacyWireId)) {
             return remapped;
         }
-        Item fallback = BuiltInRegistries.ITEM.byId(ItemRewriter.remapItemIdStrict(Item.getId(Items.STONE)));
-        if (fallback == null) {
-            fallback = Items.STONE;
-        }
+        Item fallback = Items.STONE;
         return ItemStackTemplate.fromNonEmptyStack(new ItemStack(fallback));
     }
 

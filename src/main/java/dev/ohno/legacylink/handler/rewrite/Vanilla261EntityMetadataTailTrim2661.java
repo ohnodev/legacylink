@@ -79,7 +79,7 @@ public final class Vanilla261EntityMetadataTailTrim2661 {
             return false;
         }
         Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
-        return key != null && id.contentEquals(key.toString());
+        return key != null && id.equals(key.toString());
     }
 
     /**

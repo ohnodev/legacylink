@@ -37,6 +37,8 @@ public class LegacyLinkMod implements ModInitializer {
             RegistryRemapper.buildMappings();
             LOGGER.info("[LegacyLink] Block/item/entity mappings built — {} block states remapped, {} items remapped",
                     RegistryRemapper.blockStateRemapCount(), RegistryRemapper.itemRemapCount());
+            LOGGER.info("[LegacyLink] Ready — 26.1.2 clients (protocol {}) on 26.2-snapshot-3 server (protocol {})",
+                    LegacyLinkConstants.PROTOCOL_26_1_2, LegacyLinkConstants.PROTOCOL_26_2_SNAPSHOT_3);
         });
 
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
@@ -44,9 +46,6 @@ public class LegacyLinkMod implements ModInitializer {
             LegacyRuntimeContext.reset();
             TranslationStats.dump();
         });
-
-        LOGGER.info("[LegacyLink] Ready — 26.1.2 clients (protocol {}) on 26.2-snapshot-3 server (protocol {})",
-                LegacyLinkConstants.PROTOCOL_26_1_2, LegacyLinkConstants.PROTOCOL_26_2_SNAPSHOT_3);
 
         if (PositionPacketTrace.enabled()) {
             LOGGER.warn("[LegacyLink] Position tracing ON (-Dlegacylink.tracePositions=true). "

@@ -1,6 +1,5 @@
 package dev.ohno.legacylink.handler.rewrite;
 
-import net.minecraft.core.component.DataComponentType;
 import net.minecraft.network.protocol.game.ClientboundRecipeBookAddPacket;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStackTemplate;
@@ -161,83 +160,21 @@ public final class RecipeBookAddRewriter {
     }
 
     private static List<SlotDisplay> remapSlotDisplays(List<SlotDisplay> displays) {
-        List<SlotDisplay> remapped = new ArrayList<>(displays.size());
-        boolean changed = false;
-
-        for (SlotDisplay display : displays) {
-            SlotDisplay mapped = remapSlotDisplay(display);
-            if (mapped != display) {
-                changed = true;
-            }
-            remapped.add(mapped);
-        }
-
-        if (!changed) {
-            return displays;
-        }
-        return remapped;
+        return SlotDisplayUtils.rewriteNested(displays, RecipeBookAddRewriter::remapLeafDisplay);
     }
 
     public static SlotDisplay remapSlotDisplay(SlotDisplay display) {
+        return SlotDisplayUtils.rewrite(display, RecipeBookAddRewriter::remapLeafDisplay);
+    }
+
+    private static SlotDisplay remapLeafDisplay(SlotDisplay display) {
         if (display instanceof SlotDisplay.ItemSlotDisplay itemDisplay) {
             Item mapped = ItemRewriter.remapItemForLegacyRegistryEncoding(itemDisplay.item().value());
-            if (mapped == itemDisplay.item().value()) {
-                return display;
-            }
-            return new SlotDisplay.ItemSlotDisplay(mapped);
+            return mapped == itemDisplay.item().value() ? display : new SlotDisplay.ItemSlotDisplay(mapped);
         }
         if (display instanceof SlotDisplay.ItemStackSlotDisplay stackDisplay) {
             ItemStackTemplate remapped = ItemRewriter.remapTemplate(stackDisplay.stack());
-            if (remapped == stackDisplay.stack()) {
-                return display;
-            }
-            return new SlotDisplay.ItemStackSlotDisplay(remapped);
-        }
-        if (display instanceof SlotDisplay.Composite composite) {
-            List<SlotDisplay> remapped = remapSlotDisplays(composite.contents());
-            if (remapped == composite.contents()) {
-                return display;
-            }
-            return new SlotDisplay.Composite(remapped);
-        }
-        if (display instanceof SlotDisplay.WithRemainder withRemainder) {
-            SlotDisplay input = remapSlotDisplay(withRemainder.input());
-            SlotDisplay remainder = remapSlotDisplay(withRemainder.remainder());
-            if (input == withRemainder.input() && remainder == withRemainder.remainder()) {
-                return display;
-            }
-            return new SlotDisplay.WithRemainder(input, remainder);
-        }
-        if (display instanceof SlotDisplay.SmithingTrimDemoSlotDisplay smithingTrimDemo) {
-            SlotDisplay base = remapSlotDisplay(smithingTrimDemo.base());
-            SlotDisplay material = remapSlotDisplay(smithingTrimDemo.material());
-            if (base == smithingTrimDemo.base() && material == smithingTrimDemo.material()) {
-                return display;
-            }
-            return new SlotDisplay.SmithingTrimDemoSlotDisplay(base, material, smithingTrimDemo.pattern());
-        }
-        if (display instanceof SlotDisplay.DyedSlotDemo dyedDemo) {
-            SlotDisplay dye = remapSlotDisplay(dyedDemo.dye());
-            SlotDisplay target = remapSlotDisplay(dyedDemo.target());
-            if (dye == dyedDemo.dye() && target == dyedDemo.target()) {
-                return display;
-            }
-            return new SlotDisplay.DyedSlotDemo(dye, target);
-        }
-        if (display instanceof SlotDisplay.OnlyWithComponent onlyWithComponent) {
-            SlotDisplay source = remapSlotDisplay(onlyWithComponent.source());
-            DataComponentType<?> component = onlyWithComponent.component();
-            if (source == onlyWithComponent.source()) {
-                return display;
-            }
-            return new SlotDisplay.OnlyWithComponent(source, component);
-        }
-        if (display instanceof SlotDisplay.WithAnyPotion withAnyPotion) {
-            SlotDisplay nested = remapSlotDisplay(withAnyPotion.display());
-            if (nested == withAnyPotion.display()) {
-                return display;
-            }
-            return new SlotDisplay.WithAnyPotion(nested);
+            return remapped == stackDisplay.stack() ? display : new SlotDisplay.ItemStackSlotDisplay(remapped);
         }
         return display;
     }

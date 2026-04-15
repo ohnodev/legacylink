@@ -1,10 +1,8 @@
 package dev.ohno.legacylink.handler.rewrite;
 
 import dev.ohno.legacylink.runtime.LegacyRuntimeContext;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.npc.villager.VillagerData;
@@ -33,11 +31,7 @@ public final class VillagerEntityData2661 {
     }
 
     private static boolean isEntityType(@Nullable EntityType<?> type, String id) {
-        if (type == null) {
-            return false;
-        }
-        Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
-        return key != null && id.contentEquals(key.toString());
+        return EntityTypeIdMatcher.isEntityType(type, id);
     }
 
     private VillagerEntityData2661() {}

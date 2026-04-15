@@ -78,7 +78,6 @@ public final class RegistryRemapper {
         }
         validLegacyStateIds = validStateIds;
 
-        BLOCK_STATE_REMAP.clear();
         for (int stateId = 0; stateId < legacyTable.length; stateId++) {
             legacyTable[stateId] = stoneStateId;
         }
@@ -282,15 +281,23 @@ public final class RegistryRemapper {
         Map<String, Integer> out = new LinkedHashMap<>();
         for (String line : lines) {
             if (line == null || line.isBlank() || line.startsWith("item,")) {
+                LegacyLinkMod.LOGGER.trace("[LegacyLink] Skipping malformed legacy item csv line (reason=empty/header, line={})", line);
                 continue;
             }
             int comma = line.lastIndexOf(',');
             if (comma <= 0 || comma >= line.length() - 1) {
+                LegacyLinkMod.LOGGER.trace("[LegacyLink] Skipping malformed legacy item csv line (reason=missing comma, line={})", line);
                 continue;
             }
             String key = line.substring(0, comma).trim();
             String idRaw = line.substring(comma + 1).trim();
             if (!idRaw.chars().allMatch(Character::isDigit)) {
+                LegacyLinkMod.LOGGER.trace(
+                        "[LegacyLink] Skipping malformed legacy item csv line (reason=invalid id '{}', key={}, line={})",
+                        idRaw,
+                        key,
+                        line
+                );
                 continue;
             }
             out.put(key, Integer.parseInt(idRaw));

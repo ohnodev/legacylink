@@ -174,7 +174,8 @@ public final class LegacyOutboundPacketCapture {
             } catch (RuntimeException e) {
                 text = "<unreadable:" + e.getClass().getSimpleName() + ">";
             }
-            return "reason=\"" + text.replace('\n', ' ') + "\"";
+            String sanitized = text.replace('\r', ' ').replace('\n', ' ');
+            return "reason=\"" + sanitized + "\"";
         }
         return "-";
     }

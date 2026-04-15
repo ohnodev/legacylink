@@ -19,6 +19,7 @@ import dev.ohno.legacylink.handler.rewrite.BlockStatePacketRewriter;
 import dev.ohno.legacylink.handler.rewrite.EntityMetadataRewriter2661;
 import dev.ohno.legacylink.handler.rewrite.RecipeBookAddRewriter;
 import dev.ohno.legacylink.handler.rewrite.ItemRewriter;
+import dev.ohno.legacylink.handler.rewrite.SlotDisplayUtils;
 import dev.ohno.legacylink.mapping.LegacyAttributeWireTable;
 import dev.ohno.legacylink.mapping.RegistryRemapper;
 import dev.ohno.legacylink.runtime.LegacyRuntimeContext;
@@ -816,39 +817,15 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     }
 
     private boolean containsUnsafeSlotDisplay(SlotDisplay display) {
-        if (display instanceof SlotDisplay.ItemSlotDisplay itemDisplay) {
-            return !RegistryRemapper.isLegacyItemWireId(Item.getId(itemDisplay.item().value()));
-        }
-        if (display instanceof SlotDisplay.ItemStackSlotDisplay stackDisplay) {
-            return !RegistryRemapper.isLegacyItemWireId(Item.getId(stackDisplay.stack().create().getItem()));
-        }
-        if (display instanceof SlotDisplay.Composite composite) {
-            for (SlotDisplay nested : composite.contents()) {
-                if (containsUnsafeSlotDisplay(nested)) {
-                    return true;
-                }
+        return SlotDisplayUtils.anyMatch(display, slotDisplay -> {
+            if (slotDisplay instanceof SlotDisplay.ItemSlotDisplay itemDisplay) {
+                return !RegistryRemapper.isLegacyItemWireId(Item.getId(itemDisplay.item().value()));
+            }
+            if (slotDisplay instanceof SlotDisplay.ItemStackSlotDisplay stackDisplay) {
+                return !RegistryRemapper.isLegacyItemWireId(Item.getId(stackDisplay.stack().create().getItem()));
             }
             return false;
-        }
-        if (display instanceof SlotDisplay.WithRemainder withRemainder) {
-            return containsUnsafeSlotDisplay(withRemainder.input())
-                    || containsUnsafeSlotDisplay(withRemainder.remainder());
-        }
-        if (display instanceof SlotDisplay.SmithingTrimDemoSlotDisplay smithingTrimDemo) {
-            return containsUnsafeSlotDisplay(smithingTrimDemo.base())
-                    || containsUnsafeSlotDisplay(smithingTrimDemo.material());
-        }
-        if (display instanceof SlotDisplay.DyedSlotDemo dyedDemo) {
-            return containsUnsafeSlotDisplay(dyedDemo.dye())
-                    || containsUnsafeSlotDisplay(dyedDemo.target());
-        }
-        if (display instanceof SlotDisplay.OnlyWithComponent onlyWithComponent) {
-            return containsUnsafeSlotDisplay(onlyWithComponent.source());
-        }
-        if (display instanceof SlotDisplay.WithAnyPotion withAnyPotion) {
-            return containsUnsafeSlotDisplay(withAnyPotion.display());
-        }
-        return false;
+        });
     }
 
     public ClientboundRecipeBookAddPacket remapRecipeBookAdd(ClientboundRecipeBookAddPacket packet) {

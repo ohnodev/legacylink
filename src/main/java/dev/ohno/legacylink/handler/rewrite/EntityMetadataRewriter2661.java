@@ -166,11 +166,7 @@ public final class EntityMetadataRewriter2661 {
     }
 
     private static boolean isEntityType(@Nullable EntityType<?> type, String id) {
-        if (type == null) {
-            return false;
-        }
-        Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
-        return key != null && id.contentEquals(key.toString());
+        return EntityTypeIdMatcher.isEntityType(type, id);
     }
 
     private static @Nullable List<SynchedEntityData.DataValue<?>> rewriteCubeMobDataIfNeeded(
@@ -286,21 +282,17 @@ public final class EntityMetadataRewriter2661 {
         if (cap < 0) {
             return null;
         }
+        List<SynchedEntityData.DataValue<?>> out = new ArrayList<>(packedItems.size());
         boolean overflow = false;
         for (SynchedEntityData.DataValue<?> v : packedItems) {
             if (v.id() > cap) {
                 overflow = true;
-                break;
+            } else {
+                out.add(v);
             }
         }
         if (!overflow) {
             return null;
-        }
-        List<SynchedEntityData.DataValue<?>> out = new ArrayList<>(packedItems.size());
-        for (SynchedEntityData.DataValue<?> v : packedItems) {
-            if (v.id() <= cap) {
-                out.add(v);
-            }
         }
         return out;
     }
