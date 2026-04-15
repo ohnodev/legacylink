@@ -4,8 +4,10 @@ import dev.ohno.legacylink.LegacyLinkConstants;
 import dev.ohno.legacylink.LegacyLinkMod;
 import dev.ohno.legacylink.connection.LegacyTracker;
 import dev.ohno.legacylink.handler.LegacyPacketHandler;
+import dev.ohno.legacylink.integration.PacketEventsVersionBridge;
 import net.minecraft.SharedConstants;
 import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.handshake.ClientIntent;
 import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
 import net.minecraft.network.protocol.login.LoginProtocols;
 import net.minecraft.server.MinecraftServer;
@@ -36,7 +38,8 @@ public abstract class HandshakeMixin {
                     this.connection.getRemoteAddress());
 
             LegacyTracker.markLegacy(this.connection);
-            LegacyPacketHandler.install(this.connection);
+            PacketEventsVersionBridge.normalizeLegacyUserIfPresent(this.connection);
+            LegacyPacketHandler.install(this.connection, "login");
 
             this.connection.setupOutboundProtocol(LoginProtocols.CLIENTBOUND);
             this.connection.setupInboundProtocol(LoginProtocols.SERVERBOUND,
@@ -45,11 +48,22 @@ public abstract class HandshakeMixin {
         }
     }
 
+    /**
+     * Mark legacy before the handshake switch runs. Install the outbound translator only for {@link ClientIntent#STATUS}:
+     * {@code beginLogin} (LOGIN / TRANSFER) also calls {@link LegacyPacketHandler#install}, so doing it here too logged
+     * twice and removed/re-added the same handler for no benefit.
+     */
     @Inject(method = "handleIntention", at = @At("HEAD"))
-    private void legacylink$markLegacyOnStatusPing(ClientIntentionPacket packet, CallbackInfo ci) {
-        if (isSupportedBridgePair(packet)) {
-            LegacyTracker.markLegacy(this.connection);
-            LegacyPacketHandler.install(this.connection);
+    private void legacylink$markLegacyOnHandshake(ClientIntentionPacket packet, CallbackInfo ci) {
+        if (!isSupportedBridgePair(packet)) {
+            return;
         }
+        LegacyTracker.markLegacy(this.connection);
+        PacketEventsVersionBridge.normalizeLegacyUserIfPresent(this.connection);
+        ClientIntent intent = packet.intention();
+        if (intent == ClientIntent.LOGIN || intent == ClientIntent.TRANSFER) {
+            return;
+        }
+        LegacyPacketHandler.install(this.connection, "status");
     }
 }

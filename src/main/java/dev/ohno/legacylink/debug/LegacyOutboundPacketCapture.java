@@ -16,6 +16,7 @@ import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket;
+import net.minecraft.network.protocol.common.ClientboundDisconnectPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
@@ -139,9 +140,17 @@ public final class LegacyOutboundPacketCapture {
         if (packet instanceof ClientboundMoveEntityPacket p) {
             int eid = moveEntityId(p);
             return String.format(java.util.Locale.ROOT,
-                    "entityId=%d dPos=(%d,%d,%d) yRot=%d xRot=%d hasPos=%s hasRot=%s onGround=%s wireType=%s",
-                    eid, p.getXa(), p.getYa(), p.getZa(), p.getYRot(), p.getXRot(),
-                    p.hasPosition(), p.hasRotation(), p.isOnGround(), p.type().id());
+                    "entityId=%d dPos=(%s,%s,%s) yRot=%s xRot=%s hasPos=%s hasRot=%s onGround=%s wireType=%s",
+                    eid,
+                    p.getXa(),
+                    p.getYa(),
+                    p.getZa(),
+                    p.getYRot(),
+                    p.getXRot(),
+                    p.hasPosition(),
+                    p.hasRotation(),
+                    p.isOnGround(),
+                    p.type().id());
         }
         if (packet instanceof ClientboundRotateHeadPacket p) {
             return "entityId=" + rotateHeadEntityId(p) + " yHeadRot=" + p.getYHeadRot();
@@ -157,6 +166,15 @@ public final class LegacyOutboundPacketCapture {
         }
         if (packet instanceof ClientboundLevelChunkWithLightPacket) {
             return "chunk_with_light (payload omitted)";
+        }
+        if (packet instanceof ClientboundDisconnectPacket p) {
+            String text;
+            try {
+                text = p.reason() == null ? "<null>" : p.reason().getString();
+            } catch (RuntimeException e) {
+                text = "<unreadable:" + e.getClass().getSimpleName() + ">";
+            }
+            return "reason=\"" + text.replace('\n', ' ') + "\"";
         }
         return "-";
     }

@@ -75,7 +75,7 @@ cp prebuilt/legacylink-0.1.1.jar /path/to/server/mods/
 
 ### Known limitations (v0.1)
 
-- **Block state ID ceiling** (`MAX_26_1_BLOCKSTATE_ID` in `LegacyLinkConstants`) is the **inclusive** last index the legacy client accepts (`0..MAX`). Pinned to **26.1.1** (`30207`) so 26.2 palette IDs remap safely; setting it too high can crash legacy clients in `LinearPalette.read`.
+- **Mapping source of truth:** block states and items are translated from bundled 26.1.2/26.2-snapshot-3 dump tables by exact ID membership, not by "max legacy ID" thresholds.
 - **Item stacks (wire):** 26.2↔26.1 numeric item ids for legacy connections via `LegacyItemIdTable` + `ItemStackOptionalCodecMixin` (optional stacks, including creative untrusted codec) and `HashedStackActualItemMixin` (container clicks). Inbound decode is scoped to `PacketDecoder#decode` (`PacketDecoderMixin`).
 
 ## Configuration

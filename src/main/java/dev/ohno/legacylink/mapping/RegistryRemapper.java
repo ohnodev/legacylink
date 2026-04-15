@@ -6,6 +6,9 @@ import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import it.unimi.dsi.fastutil.ints.Int2IntMap;
 import it.unimi.dsi.fastutil.ints.Int2IntOpenHashMap;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import it.unimi.dsi.fastutil.ints.IntSet;
+import it.unimi.dsi.fastutil.ints.IntSets;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
@@ -13,6 +16,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.Property;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -22,14 +26,15 @@ import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
- * Server-side 26.2 → 26.1 numeric remaps used on the wire. Same role as Via’s per-protocol mapping tables, but
- * scoped to this version pair: explicit {@link LegacyLinkConstants} entries plus range guards so unknown high ids
- * never reach a 26.1 client.
+ * Server-side 26.2 → 26.1 numeric remaps used on the wire. Same role as Via’s per-protocol mapping tables:
+ * all remaps are dump-table driven with exact legacy ID membership checks (no max-threshold gating).
  */
 public final class RegistryRemapper {
 
@@ -43,13 +48,12 @@ public final class RegistryRemapper {
     private static final Int2IntMap BLOCK_STATE_REMAP = new Int2IntOpenHashMap();
     private static final Int2IntMap ITEM_REMAP = new Int2IntOpenHashMap();
     private static int[] blockStateToLegacy = new int[0];
+    private static int[] itemToLegacy = new int[0];
+    private static IntSet validLegacyStateIds = IntSets.EMPTY_SET;
+    private static IntSet validLegacyItemIds = IntSets.EMPTY_SET;
     private static Map<String, Integer> legacyStateIdByString = Map.of();
     private static Map<String, String> snapshotStateById = Map.of();
     private static Map<String, Integer> legacyItemIdByString = Map.of();
-
-    /** Legacy wire-id fallback (mapped stone id) for 26.1 clients. */
-    private static int fallbackBlockStateId = 1;
-    private static final Item FALLBACK_ITEM = Items.STONE;
 
     public static void buildMappings() {
         legacyStateIdByString = loadLegacyStateIdMap();
@@ -61,26 +65,44 @@ public final class RegistryRemapper {
 
         int stateRegistrySize = Block.BLOCK_STATE_REGISTRY.size();
         int[] legacyTable = new int[stateRegistrySize];
+        IntSet validStateIds = new IntOpenHashSet(legacyStateIdByString.size());
 
-        int stoneStateId = Block.BLOCK_STATE_REGISTRY.getId(Blocks.STONE.defaultBlockState());
-        if (stoneStateId < 0 || stoneStateId >= legacyTable.length) {
-            stoneStateId = 1;
+        int stoneStateId = legacyStateIdByString.getOrDefault(Blocks.STONE.defaultBlockState().toString(), 1);
+        for (Integer id : legacyStateIdByString.values()) {
+            if (id != null && id >= 0) {
+                validStateIds.add(id);
+            }
         }
-        fallbackBlockStateId = stoneStateId;
+        if (!validStateIds.contains(stoneStateId)) {
+            validStateIds.add(stoneStateId);
+        }
+        validLegacyStateIds = validStateIds;
 
         BLOCK_STATE_REMAP.clear();
-        int legacyMaxStateId = LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID;
         for (int stateId = 0; stateId < legacyTable.length; stateId++) {
             legacyTable[stateId] = stoneStateId;
         }
 
+        List<String> missingSnapshotStateIds = new ArrayList<>();
+        List<String> unmappedSnapshotStates = new ArrayList<>();
         for (Block block : BuiltInRegistries.BLOCK) {
             for (BlockState state : block.getStateDefinition().getPossibleStates()) {
                 int stateId = Block.BLOCK_STATE_REGISTRY.getId(state);
-                String stateKey = snapshotStateById.getOrDefault(Integer.toString(stateId), state.toString());
+                String snapshotIdKey = Integer.toString(stateId);
+                String stateKey = snapshotStateById.get(snapshotIdKey);
+                if (stateKey == null) {
+                    stateKey = state.toString();
+                    missingSnapshotStateIds.add(snapshotIdKey + "=" + stateKey);
+                }
                 Integer mappedLegacyId = legacyStateIdByString.get(stateKey);
+                if (mappedLegacyId == null) {
+                    mappedLegacyId = explicitLegacyStateIdForUnsupportedSnapshotState(state);
+                }
+                if (mappedLegacyId == null) {
+                    unmappedSnapshotStates.add(snapshotIdKey + "=" + stateKey);
+                }
                 int target = mappedLegacyId == null ? stoneStateId : mappedLegacyId;
-                if (target < 0 || target > legacyMaxStateId) {
+                if (target < 0 || !validStateIds.contains(target)) {
                     target = stoneStateId;
                 }
                 legacyTable[stateId] = target;
@@ -91,20 +113,48 @@ public final class RegistryRemapper {
         }
 
         blockStateToLegacy = legacyTable;
+        assertNoMissingMappings("snapshot state ids", missingSnapshotStateIds);
+        assertNoMissingMappings("snapshot block-state->legacy remaps", unmappedSnapshotStates);
+        assertLegacyWireIdsResolveOnServer(legacyTable);
 
+        IntSet validItemIds = new IntOpenHashSet(legacyItemIdByString.size());
+        for (Integer id : legacyItemIdByString.values()) {
+            if (id != null && id >= 0) {
+                validItemIds.add(id);
+            }
+        }
         int stoneItemId = legacyItemIdByString.getOrDefault("minecraft:stone", Item.getId(Items.STONE));
+        if (!validItemIds.contains(stoneItemId)) {
+            validItemIds.add(stoneItemId);
+        }
+        int itemRegistrySize = BuiltInRegistries.ITEM.size();
+        int[] itemTable = new int[itemRegistrySize];
+        List<String> unmappedSnapshotItems = new ArrayList<>();
         for (Item item : BuiltInRegistries.ITEM) {
             Identifier itemId = BuiltInRegistries.ITEM.getKey(item);
             int serverItemId = Item.getId(item);
             String key = itemId == null ? "" : itemId.toString();
-            int mapped = legacyItemIdByString.getOrDefault(key, stoneItemId);
-            if (mapped < 0 || mapped > LegacyLinkConstants.MAX_26_1_ITEM_ID) {
+            Integer explicitLegacyItemId = null;
+            if (!legacyItemIdByString.containsKey(key)) {
+                explicitLegacyItemId = explicitLegacyItemIdForUnsupportedSnapshotItem(key);
+            }
+            if (!legacyItemIdByString.containsKey(key) && explicitLegacyItemId == null) {
+                unmappedSnapshotItems.add(serverItemId + "=" + key);
+            }
+            int mapped = explicitLegacyItemId != null
+                    ? explicitLegacyItemId
+                    : legacyItemIdByString.getOrDefault(key, stoneItemId);
+            if (mapped < 0 || !validItemIds.contains(mapped)) {
                 mapped = stoneItemId;
             }
+            itemTable[serverItemId] = mapped;
             if (mapped != serverItemId) {
                 ITEM_REMAP.put(serverItemId, mapped);
             }
         }
+        itemToLegacy = itemTable;
+        validLegacyItemIds = validItemIds;
+        assertNoMissingMappings("snapshot item->legacy remaps", unmappedSnapshotItems);
 
         LegacyItemIdTable.rebuild();
         LegacyAttributeWireTable.rebuild();
@@ -117,28 +167,34 @@ public final class RegistryRemapper {
     public static int remapBlockState(int stateId) {
         int[] table = blockStateToLegacy;
         if (stateId < 0 || stateId >= table.length) {
-            return fallbackBlockStateId;
+            throw new IllegalStateException("[LegacyLink] remapBlockState out of range: " + stateId
+                    + " (table size " + table.length + ")");
         }
         int mapped = table[stateId];
-        if (mapped < 0 || mapped > LegacyLinkConstants.MAX_26_1_BLOCKSTATE_ID) {
-            return fallbackBlockStateId;
+        if (mapped < 0) {
+            throw new IllegalStateException("[LegacyLink] remapBlockState produced negative mapping: " + stateId + " -> " + mapped);
+        }
+        IntSet valid = validLegacyStateIds;
+        if (!valid.contains(mapped)) {
+            throw new IllegalStateException("[LegacyLink] remapBlockState produced non-legacy id: "
+                    + stateId + " -> " + mapped);
         }
         return mapped;
     }
 
-    /**
-     * Map a 26.2 item registry id to one the legacy client understands: known mod replacements first, otherwise
-     * pass-through if {@code <= MAX_26_1_ITEM_ID}, else {@link Items#STONE}.
-     */
+    /** Map a 26.2 item registry id to the 26.1 wire-id produced by dump-table mapping. */
     public static int remapItem(int itemId) {
-        int explicit = ITEM_REMAP.getOrDefault(itemId, itemId);
-        if (explicit != itemId) {
-            return explicit;
+        int[] table = itemToLegacy;
+        if (itemId < 0 || itemId >= table.length) {
+            throw new IllegalStateException("[LegacyLink] remapItem out of range: " + itemId
+                    + " (table size " + table.length + ")");
         }
-        if (itemId > LegacyLinkConstants.MAX_26_1_ITEM_ID) {
-            return Item.getId(FALLBACK_ITEM);
+        int mapped = table[itemId];
+        if (mapped < 0 || !validLegacyItemIds.contains(mapped)) {
+            throw new IllegalStateException("[LegacyLink] remapItem produced non-legacy id: "
+                    + itemId + " -> " + mapped);
         }
-        return itemId;
+        return mapped;
     }
 
     public static boolean needsBlockRemap(int stateId) {
@@ -153,6 +209,32 @@ public final class RegistryRemapper {
         return BLOCK_STATE_REMAP.size();
     }
 
+    /**
+     * Every value stored in the remap table is written on the wire as a global block state id. On this server it must
+     * be a real {@link BlockState} registry index so outbound rewriting can use {@code Block.BLOCK_STATE_REGISTRY.byId}
+     * as the only materialization path.
+     */
+    private static void assertLegacyWireIdsResolveOnServer(int[] legacyTable) {
+        int registrySize = Block.BLOCK_STATE_REGISTRY.size();
+        IntOpenHashSet seen = new IntOpenHashSet();
+        for (int target : legacyTable) {
+            if (!seen.add(target)) {
+                continue;
+            }
+            if (target < 0 || target >= registrySize) {
+                throw new IllegalStateException(
+                        "[LegacyLink] Legacy block-state wire id " + target
+                                + " is out of range for this server's BLOCK_STATE_REGISTRY (size " + registrySize + ")");
+            }
+            BlockState resolved = Block.BLOCK_STATE_REGISTRY.byId(target);
+            if (resolved == null) {
+                throw new IllegalStateException(
+                        "[LegacyLink] Legacy block-state wire id " + target
+                                + " does not resolve via Block.BLOCK_STATE_REGISTRY.byId on this server; fix mapping tables");
+            }
+        }
+    }
+
     public static int itemRemapCount() {
         return ITEM_REMAP.size();
     }
@@ -162,14 +244,19 @@ public final class RegistryRemapper {
     static int legacyItemIdByRegistryKeyOrFallback(String registryId) {
         int stone = legacyItemIdByString.getOrDefault("minecraft:stone", Item.getId(Items.STONE));
         int mapped = legacyItemIdByString.getOrDefault(registryId, stone);
-        if (mapped < 0 || mapped > LegacyLinkConstants.MAX_26_1_ITEM_ID) {
+        if (mapped < 0 || !validLegacyItemIds.contains(mapped)) {
             return stone;
         }
         return mapped;
     }
 
     public static boolean hasLegacyItemRegistryKey(String registryId) {
-        return legacyItemIdByString.containsKey(registryId);
+        Integer mapped = legacyItemIdByString.get(registryId);
+        return mapped != null && mapped >= 0 && validLegacyItemIds.contains(mapped);
+    }
+
+    public static boolean isLegacyItemWireId(int itemId) {
+        return itemId >= 0 && validLegacyItemIds.contains(itemId);
     }
 
     private static Map<String, Integer> loadLegacyStateIdMap() {
@@ -255,6 +342,118 @@ public final class RegistryRemapper {
         } catch (IOException e) {
             throw new IllegalStateException("[LegacyLink] Failed reading bundled " + label + " resource: " + resourcePath, e);
         }
+    }
+
+    private static void assertNoMissingMappings(String label, List<String> missingEntries) {
+        if (missingEntries.isEmpty()) {
+            return;
+        }
+        throw new IllegalStateException(
+                "[LegacyLink] Missing deterministic " + label + " (" + missingEntries.size() + "): "
+                        + String.join(", ", missingEntries)
+        );
+    }
+
+    private static Integer explicitLegacyStateIdForUnsupportedSnapshotState(BlockState snapshotState) {
+        Identifier blockId = BuiltInRegistries.BLOCK.getKey(snapshotState.getBlock());
+        if (blockId == null) {
+            return null;
+        }
+        String key = blockId.toString();
+        if (!LegacyLinkConstants.SULFUR_BLOCK_IDS.contains(key)) {
+            return null;
+        }
+        Block replacement = replacementBlockForUnsupportedSnapshotBlock(key);
+        BlockState projected = projectSharedProperties(snapshotState, replacement.defaultBlockState());
+        return legacyStateIdByString.get(projected.toString());
+    }
+
+    private static Block replacementBlockForUnsupportedSnapshotBlock(String blockId) {
+        if (blockId.endsWith("_slab")) {
+            return Blocks.STONE_SLAB;
+        }
+        if (blockId.endsWith("_stairs")) {
+            return Blocks.STONE_STAIRS;
+        }
+        if (blockId.endsWith("_wall")) {
+            return Blocks.COBBLESTONE_WALL;
+        }
+        if ("minecraft:sulfur_spike".equals(blockId)) {
+            return Blocks.POINTED_DRIPSTONE;
+        }
+        if (blockId.contains("brick")) {
+            return Blocks.STONE_BRICKS;
+        }
+        if (blockId.startsWith("minecraft:chiseled_")) {
+            return Blocks.CHISELED_STONE_BRICKS;
+        }
+        return Blocks.STONE;
+    }
+
+    private static BlockState projectSharedProperties(BlockState source, BlockState target) {
+        BlockState out = target;
+        for (Property<?> sourceProperty : source.getProperties()) {
+            out = projectPropertyByName(source, out, sourceProperty);
+        }
+        return out;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static BlockState projectPropertyByName(BlockState source, BlockState target, Property<?> sourceProperty) {
+        Property targetProperty = null;
+        for (Property<?> candidate : target.getProperties()) {
+            if (candidate.getName().equals(sourceProperty.getName())) {
+                targetProperty = candidate;
+                break;
+            }
+        }
+        if (targetProperty == null) {
+            return target;
+        }
+        Property rawSourceProperty = (Property) sourceProperty;
+        Comparable sourceValue = source.getValue(rawSourceProperty);
+        String serializedValue = rawSourceProperty.getName(sourceValue);
+        Optional parsed = targetProperty.getValue(serializedValue);
+        if (parsed.isEmpty()) {
+            return target;
+        }
+        return target.setValue(targetProperty, (Comparable) parsed.get());
+    }
+
+    private static Integer explicitLegacyItemIdForUnsupportedSnapshotItem(String snapshotItemId) {
+        if (!LegacyLinkConstants.SULFUR_ITEM_IDS.contains(snapshotItemId)) {
+            return null;
+        }
+        String replacement = replacementItemRegistryIdForUnsupportedSnapshotItem(snapshotItemId);
+        return legacyItemIdByString.get(replacement);
+    }
+
+    private static String replacementItemRegistryIdForUnsupportedSnapshotItem(String snapshotItemId) {
+        if ("minecraft:sulfur_cube_bucket".equals(snapshotItemId)) {
+            return "minecraft:water_bucket";
+        }
+        if ("minecraft:sulfur_cube_spawn_egg".equals(snapshotItemId)) {
+            return "minecraft:slime_spawn_egg";
+        }
+        if ("minecraft:sulfur_spike".equals(snapshotItemId)) {
+            return "minecraft:pointed_dripstone";
+        }
+        if (snapshotItemId.endsWith("_slab")) {
+            return "minecraft:stone_slab";
+        }
+        if (snapshotItemId.endsWith("_stairs")) {
+            return "minecraft:stone_stairs";
+        }
+        if (snapshotItemId.endsWith("_wall")) {
+            return "minecraft:cobblestone_wall";
+        }
+        if (snapshotItemId.contains("brick")) {
+            return "minecraft:stone_bricks";
+        }
+        if (snapshotItemId.startsWith("minecraft:chiseled_")) {
+            return "minecraft:chiseled_stone_bricks";
+        }
+        return "minecraft:stone";
     }
 
 }

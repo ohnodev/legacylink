@@ -17,7 +17,23 @@ public final class PacketEventsVersionBridge {
 
     private PacketEventsVersionBridge() {}
 
+    /**
+     * Call as soon as a connection is marked legacy (handshake), before play-phase inbound packets are decoded.
+     * Otherwise the first serverbound play packets can be mapped with server (26.2) IDs while the wire is 26.1.
+     */
+    public static void normalizeLegacyUserIfPresent(Connection connection) {
+        normalizeLegacyUser0(connection);
+    }
+
+    /**
+     * @deprecated Prefer {@link #normalizeLegacyUserIfPresent(Connection)} — name was wrong (sets V_26_1 when available).
+     */
+    @Deprecated
     public static void force26_2IfPresent(Connection connection) {
+        normalizeLegacyUser0(connection);
+    }
+
+    private static void normalizeLegacyUser0(Connection connection) {
         if (Boolean.TRUE.equals(connection.channel.attr(NORMALIZED_ATTR).get())) {
             return;
         }
@@ -56,7 +72,7 @@ public final class PacketEventsVersionBridge {
             logUnavailableOnce();
         } catch (ReflectiveOperationException e) {
             LegacyLinkMod.LOGGER.warn(
-                    "[LegacyLink] Failed to force PacketEvents user client version to V_26_2 for {}: {}",
+                    "[LegacyLink] Failed to set PacketEvents user client version to legacy (V_26_1) for {}: {}",
                     connection.getRemoteAddress(),
                     e.toString()
             );

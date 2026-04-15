@@ -8,13 +8,6 @@ public final class LegacyLinkConstants {
     public static final int PROTOCOL_26_1_2 = 775;
     public static final int PROTOCOL_26_2_SNAPSHOT_3 = 1073742133;
 
-    // Upper bounds for 26.1.2 protocol registries; anything above is treated as 26.2-only on the wire.
-    // Values pinned from runtime dump on vanilla 26.1.2:
-    // - items: 1506 entries => max id 1505
-    // - block states: 29873 entries => max id 29872
-    public static final int MAX_26_1_ITEM_ID = 1505;
-    public static final int MAX_26_1_BLOCKSTATE_ID = 29872;
-
     public static final Set<String> SULFUR_BLOCK_IDS = Set.of(
             "minecraft:sulfur",
             "minecraft:potent_sulfur",

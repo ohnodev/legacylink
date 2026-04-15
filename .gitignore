@@ -5,3 +5,8 @@ run/
 *.iml
 .idea/
 out/
+
+# Release jars under prebuilt/ only (not arbitrary *.jar elsewhere).
+prebuilt/*
+!prebuilt/.gitkeep
+!prebuilt/*.jar

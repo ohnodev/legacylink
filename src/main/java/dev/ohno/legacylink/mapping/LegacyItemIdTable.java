@@ -1,6 +1,5 @@
 package dev.ohno.legacylink.mapping;
 
-import dev.ohno.legacylink.LegacyLinkConstants;
 import dev.ohno.legacylink.LegacyLinkMod;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.Item;
@@ -60,20 +59,13 @@ public final class LegacyItemIdTable {
 
         toLegacy = table;
         legacyStoneId = stoneLegacy;
-        legacyCount = Math.max(maxLegacyIdSeen + 1, LegacyLinkConstants.MAX_26_1_ITEM_ID + 1);
+        legacyCount = maxLegacyIdSeen + 1;
 
         legacyToServer = buildLegacyToServerInverse(table, legacyCount, stoneServerItemId);
 
         LegacyLinkMod.LOGGER.info(
-                "[LegacyLink] Item wire-ID table built: {} server items → {} legacy IDs (expected legacy max {})",
-                size, legacyCount, LegacyLinkConstants.MAX_26_1_ITEM_ID);
-
-        if (legacyCount != LegacyLinkConstants.MAX_26_1_ITEM_ID + 1) {
-            LegacyLinkMod.LOGGER.warn(
-                    "[LegacyLink] Legacy item count {} does not match expected {} — check 26.2-only item detection",
-                    legacyCount, LegacyLinkConstants.MAX_26_1_ITEM_ID + 1
-            );
-        }
+                "[LegacyLink] Item wire-ID table built: {} server items → {} legacy IDs",
+                size, legacyCount);
     }
 
     private static int[] buildLegacyToServerInverse(int[] toLegacyTable, int legacySize, int stoneServerId) {

@@ -1,7 +1,7 @@
 package dev.ohno.legacylink.handler.rewrite;
 
-import dev.ohno.legacylink.LegacyLinkConstants;
 import dev.ohno.legacylink.LegacyLinkMod;
+import dev.ohno.legacylink.mapping.RegistryRemapper;
 import dev.ohno.legacylink.telemetry.TranslationStats;
 import net.minecraft.advancements.Advancement;
 import net.minecraft.advancements.AdvancementHolder;
@@ -34,7 +34,7 @@ public final class AdvancementRewriter {
             Optional<DisplayInfo> display = advancement.display();
             if (display.isPresent()) {
                 int originalItemId = Item.getId(display.get().getIcon().item().value());
-                if (originalItemId > LegacyLinkConstants.MAX_26_1_ITEM_ID && firstLegacyUnsafeItemId == -1) {
+                if (!RegistryRemapper.isLegacyItemWireId(originalItemId) && firstLegacyUnsafeItemId == -1) {
                     firstLegacyUnsafeItemId = originalItemId;
                 }
                 ItemStackTemplate remappedIcon = ensureLegacyWireSafeTemplate(display.get().getIcon());
@@ -107,7 +107,7 @@ public final class AdvancementRewriter {
         }
         int serverItemId = Item.getId(stack.getItem());
         int legacyWireId = ItemRewriter.remapItemIdStrict(serverItemId);
-        if (legacyWireId >= 0 && legacyWireId <= LegacyLinkConstants.MAX_26_1_ITEM_ID) {
+        if (RegistryRemapper.isLegacyItemWireId(legacyWireId)) {
             return remapped;
         }
         Item fallback = BuiltInRegistries.ITEM.byId(ItemRewriter.remapItemIdStrict(Item.getId(Items.STONE)));

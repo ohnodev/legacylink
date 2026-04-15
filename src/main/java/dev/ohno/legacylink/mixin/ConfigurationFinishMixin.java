@@ -23,7 +23,7 @@ public abstract class ConfigurationFinishMixin {
     private void legacylink$reinstallAfterOutboundSwitch(ServerboundFinishConfigurationPacket packet, CallbackInfo ci) {
         var connection = ((ServerCommonConnectionAccessor) this).legacylink$getConnection();
         if (LegacyTracker.isLegacy(connection)) {
-            LegacyPacketHandler.install(connection);
+            LegacyPacketHandler.install(connection, "post-configuration");
         }
     }
 }

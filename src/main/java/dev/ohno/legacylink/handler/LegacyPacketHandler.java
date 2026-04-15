@@ -145,6 +145,15 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     }
 
     public static void install(Connection connection) {
+        install(connection, "handshake");
+    }
+
+    /**
+     * @param phase short label for logs — vanilla calls {@code setupOutboundProtocol} again after configuration, so
+     *              legacy clients typically see two installs per join (login + post-configuration); STATUS pings are a
+     *              separate TCP connection and get their own install from {@code handleIntention}.
+     */
+    public static void install(Connection connection, String phase) {
         var pipeline = connection.channel.pipeline();
         /*
          * Always remove and re-append after packet_handler. setupOutboundProtocol() replaces the encoder and can add
@@ -161,8 +170,9 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         }
         pipeline.addAfter(HandlerNames.PACKET_HANDLER, HANDLER_NAME, new LegacyPacketHandler());
         LegacyLinkMod.LOGGER.info(
-                "[LegacyLink] Installed outbound translator after '{}' for {}",
+                "[LegacyLink] Outbound translator placed after '{}' (phase={}) for {}",
                 HandlerNames.PACKET_HANDLER,
+                phase,
                 connection.getRemoteAddress()
         );
     }
@@ -174,7 +184,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             ctx.write(msg, promise);
             return;
         }
-        PacketEventsVersionBridge.force26_2IfPresent(encodeConn);
+        PacketEventsVersionBridge.normalizeLegacyUserIfPresent(encodeConn);
         try (LegacyOutboundEncoding.Scope ignored = LegacyOutboundEncoding.enterScoped(encodeConn)) {
             writeTranslated(ctx, msg, promise);
         }
@@ -321,9 +331,6 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         }
         if (msg instanceof ClientboundBlockUpdatePacket blockUpdate) {
             return remapBlockUpdate(blockUpdate);
-        }
-        if (msg instanceof ClientboundSectionBlocksUpdatePacket sectionUpdate) {
-            return remapSectionBlocksUpdate(sectionUpdate);
         }
         if (msg instanceof ClientboundAddEntityPacket addEntity) {
             return remapEntitySpawn(addEntity);
@@ -771,7 +778,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                     : packet;
             if (containsUnsafeRecipeIds(rewrittenPacket)) {
                 LegacyLinkMod.LOGGER.warn(
-                        "[LegacyLink] update_recipes still contains item ids above legacy max; sending empty recipe sync to prevent client decode crash"
+                        "[LegacyLink] update_recipes still contains item ids outside legacy membership set; sending empty recipe sync to prevent client decode crash"
                 );
                 return new ClientboundUpdateRecipesPacket(Map.of(), SelectableRecipe.SingleInputSet.empty());
             }
@@ -790,14 +797,14 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             Set<net.minecraft.core.Holder<Item>> items =
                     (Set<net.minecraft.core.Holder<Item>>) RECIPE_ITEMS_FIELD.get(set);
             for (net.minecraft.core.Holder<Item> holder : items) {
-                if (Item.getId(holder.value()) > LegacyLinkConstants.MAX_26_1_ITEM_ID) {
+                if (!RegistryRemapper.isLegacyItemWireId(Item.getId(holder.value()))) {
                     return true;
                 }
             }
         }
         for (SelectableRecipe.SingleInputEntry<StonecutterRecipe> entry : packet.stonecutterRecipes().entries()) {
             for (var holder : entry.input().items().toList()) {
-                if (Item.getId(holder.value()) > LegacyLinkConstants.MAX_26_1_ITEM_ID) {
+                if (!RegistryRemapper.isLegacyItemWireId(Item.getId(holder.value()))) {
                     return true;
                 }
             }
@@ -810,10 +817,10 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private boolean containsUnsafeSlotDisplay(SlotDisplay display) {
         if (display instanceof SlotDisplay.ItemSlotDisplay itemDisplay) {
-            return Item.getId(itemDisplay.item().value()) > LegacyLinkConstants.MAX_26_1_ITEM_ID;
+            return !RegistryRemapper.isLegacyItemWireId(Item.getId(itemDisplay.item().value()));
         }
         if (display instanceof SlotDisplay.ItemStackSlotDisplay stackDisplay) {
-            return Item.getId(stackDisplay.stack().create().getItem()) > LegacyLinkConstants.MAX_26_1_ITEM_ID;
+            return !RegistryRemapper.isLegacyItemWireId(Item.getId(stackDisplay.stack().create().getItem()));
         }
         if (display instanceof SlotDisplay.Composite composite) {
             for (SlotDisplay nested : composite.contents()) {
@@ -911,6 +918,9 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     }
 
     public ClientboundSectionBlocksUpdatePacket remapSectionBlocksUpdate(ClientboundSectionBlocksUpdatePacket packet) {
+        if (Boolean.getBoolean("legacylink.traceSectionBlocksUpdate")) {
+            LegacyLinkMod.LOGGER.info("[LegacyLink][SectionBlocksTrace] phase=dispatch packet={}", packet.type().id());
+        }
         return BlockStatePacketRewriter.remapSectionBlocksUpdate(packet);
     }
 
