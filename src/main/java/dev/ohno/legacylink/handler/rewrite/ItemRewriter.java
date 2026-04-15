@@ -1,7 +1,9 @@
 package dev.ohno.legacylink.handler.rewrite;
 
 import dev.ohno.legacylink.mapping.RegistryRemapper;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemStackTemplate;
@@ -11,40 +13,42 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Packet-facing item rewrites for legacy clients. Numeric ids are canonicalized through
- * {@link RegistryRemapper#remapItem(int)} so packet rewrites and codec remaps share one source of truth; stacks then pass through
- * {@link ItemComponentSanitizer} to drop 26.2-only components (e.g. sulfur cube content) and rewrite nested stacks
- * in containers, bundles, and charged projectiles.
+ * Packet-facing item rewrites for legacy clients. Numeric ids use {@link RegistryRemapper#remapItem}; stacks then pass
+ * through {@link ItemComponentSanitizer} to drop 26.2-only components (e.g. sulfur cube content) and rewrite nested
+ * stacks in containers, bundles, and charged projectiles.
  */
 public final class ItemRewriter {
 
-    public static Item remapItemToLegacySafe(Item item) {
-        int serverId = Item.getId(item);
-        int canonicalServerId = RegistryRemapper.remapItem(serverId);
-        Item mapped = BuiltInRegistries.ITEM.byId(canonicalServerId);
+    /**
+     * For registry-encoded packet payloads (recipes, slot displays): convert to the server item that sits
+     * at the legacy client's expected wire index.
+     */
+    public static Item remapItemForLegacyRegistryEncoding(Item item) {
+        int mappedId = RegistryRemapper.remapItem(Item.getId(item));
+        Item mapped = BuiltInRegistries.ITEM.byId(mappedId);
         return mapped != null ? mapped : Items.STONE;
     }
 
-    public static ItemStackTemplate remapTemplate(ItemStackTemplate template) {
-        Item originalItem = template.item().value();
-        Item mappedItem = remapItemToLegacySafe(originalItem);
-        boolean itemChanged = mappedItem != originalItem;
+    /**
+     * For item-stack semantics: preserve item identity when the legacy client knows this registry key,
+     * otherwise fall back to stone.
+     */
+    public static Item remapItemToLegacySafe(Item item) {
+        Identifier key = BuiltInRegistries.ITEM.getKey(item);
+        if (key != null && RegistryRemapper.hasLegacyItemRegistryKey(key.toString())) {
+            return item;
+        }
+        return Items.STONE;
+    }
 
+    public static ItemStackTemplate remapTemplate(ItemStackTemplate template) {
         ItemStack created = template.create();
         if (created.isEmpty()) {
-            if (!itemChanged) {
-                return template;
-            }
-            // Some templates fail strict validation during create(); still remap the item id so wire encode stays legacy-safe.
-            return new ItemStackTemplate(mappedItem.builtInRegistryHolder(), template.count(), template.components());
+            return template;
         }
-
         ItemStack out = remapStack(created);
         if (out == created) {
-            if (!itemChanged) {
-                return template;
-            }
-            return new ItemStackTemplate(mappedItem.builtInRegistryHolder(), template.count(), template.components());
+            return template;
         }
         return ItemStackTemplate.fromNonEmptyStack(out);
     }

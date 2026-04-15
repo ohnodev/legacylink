@@ -35,7 +35,7 @@ public abstract class StatusPacketMixin {
         this.hasRequestedStatus = true;
         ServerStatus.Version forcedLegacyVersion = new ServerStatus.Version(
                 "26.1.2",
-                LegacyLinkConstants.PROTOCOL_26_1
+                LegacyLinkConstants.PROTOCOL_26_1_2
         );
         ServerStatus remapped = new ServerStatus(
                 this.status.description(),

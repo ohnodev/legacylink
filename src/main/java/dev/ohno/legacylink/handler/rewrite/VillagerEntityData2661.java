@@ -27,7 +27,11 @@ public final class VillagerEntityData2661 {
     private static final int VILLAGER_DATA_26_1_VILLAGER = 18;
 
     private static boolean isVillagerLike(@Nullable EntityType<?> t) {
-        return t == EntityType.VILLAGER || t == EntityType.ZOMBIE_VILLAGER;
+        return isEntityType(t, "minecraft:villager") || isEntityType(t, "minecraft:zombie_villager");
+    }
+
+    private static boolean isEntityType(@Nullable EntityType<?> type, String id) {
+        return EntityTypeIdMatcher.isEntityType(type, id);
     }
 
     private VillagerEntityData2661() {}
@@ -63,7 +67,7 @@ public final class VillagerEntityData2661 {
             return stripVillagerOnlyTailSlots(packedItems, booleanSerId);
         }
 
-        boolean zombieVillager = type == EntityType.ZOMBIE_VILLAGER;
+        boolean zombieVillager = isEntityType(type, "minecraft:zombie_villager");
 
         boolean changed = false;
         List<SynchedEntityData.DataValue<?>> out = new ArrayList<>(packedItems.size());

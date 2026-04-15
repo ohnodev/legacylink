@@ -7,6 +7,7 @@ import dev.ohno.legacylink.LegacyLinkConstants;
 import dev.ohno.legacylink.LegacyLinkMod;
 import dev.ohno.legacylink.connection.LegacyTracker;
 import dev.ohno.legacylink.encoding.LegacyOutboundEncoding;
+import dev.ohno.legacylink.integration.PacketEventsVersionBridge;
 import dev.ohno.legacylink.debug.CameraPacketTrace;
 import dev.ohno.legacylink.debug.EntityDataRewriteTrace;
 import dev.ohno.legacylink.debug.LegacyOutboundPacketCapture;
@@ -15,11 +16,10 @@ import dev.ohno.legacylink.debug.PositionPacketTrace;
 import dev.ohno.legacylink.debug.SpawnPacketTrace;
 import dev.ohno.legacylink.handler.rewrite.AdvancementRewriter;
 import dev.ohno.legacylink.handler.rewrite.BlockStatePacketRewriter;
-import dev.ohno.legacylink.handler.rewrite.CubeMobEntityData2661;
+import dev.ohno.legacylink.handler.rewrite.EntityMetadataRewriter2661;
 import dev.ohno.legacylink.handler.rewrite.RecipeBookAddRewriter;
-import dev.ohno.legacylink.handler.rewrite.Vanilla261EntityMetadataTailTrim2661;
-import dev.ohno.legacylink.handler.rewrite.VillagerEntityData2661;
 import dev.ohno.legacylink.handler.rewrite.ItemRewriter;
+import dev.ohno.legacylink.handler.rewrite.SlotDisplayUtils;
 import dev.ohno.legacylink.mapping.LegacyAttributeWireTable;
 import dev.ohno.legacylink.mapping.RegistryRemapper;
 import dev.ohno.legacylink.runtime.LegacyRuntimeContext;
@@ -30,6 +30,7 @@ import io.netty.channel.ChannelPromise;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.Connection;
@@ -49,7 +50,6 @@ import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket;
-import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetPlayerInventoryPacket;
@@ -72,7 +72,10 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.crafting.RecipePropertySet;
-import com.mojang.datafixers.util.Pair;
+import net.minecraft.world.item.crafting.SelectableRecipe;
+import net.minecraft.world.item.crafting.StonecutterRecipe;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.display.SlotDisplay;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -84,12 +87,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.lang.reflect.Constructor;
 import java.util.Set;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 
 import org.jspecify.annotations.Nullable;
 
 public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private static final String HANDLER_NAME = "legacylink";
+    private static final EntityType<?> LEGACY_SLIME_TYPE = resolveEntityType("minecraft:slime");
 
     private static final Constructor<ClientboundUpdateAttributesPacket> UPDATE_ATTRIBUTES_REBUILD_CTOR;
     private static final Field TAGS_NETWORK_PAYLOAD_TAGS_FIELD;
@@ -142,6 +147,15 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     }
 
     public static void install(Connection connection) {
+        install(connection, "handshake");
+    }
+
+    /**
+     * @param phase short label for logs — vanilla calls {@code setupOutboundProtocol} again after configuration, so
+     *              legacy clients typically see two installs per join (login + post-configuration); STATUS pings are a
+     *              separate TCP connection and get their own install from {@code handleIntention}.
+     */
+    public static void install(Connection connection, String phase) {
         var pipeline = connection.channel.pipeline();
         /*
          * Always remove and re-append after packet_handler. setupOutboundProtocol() replaces the encoder and can add
@@ -158,10 +172,23 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         }
         pipeline.addAfter(HandlerNames.PACKET_HANDLER, HANDLER_NAME, new LegacyPacketHandler());
         LegacyLinkMod.LOGGER.info(
-                "[LegacyLink] Installed outbound translator after '{}' for {}",
+                "[LegacyLink] Outbound translator placed after '{}' (phase={}) for {}",
                 HandlerNames.PACKET_HANDLER,
-                connection.getRemoteAddress()
+                phase,
+                anonymizeAddress(connection.getRemoteAddress())
         );
+    }
+
+    private static String anonymizeAddress(@Nullable Object remoteAddress) {
+        if (remoteAddress == null) {
+            return "remote#null";
+        }
+        byte[] bytes = remoteAddress.toString().getBytes(StandardCharsets.UTF_8);
+        int hash = 0;
+        for (byte b : bytes) {
+            hash = (hash * 31) + (b & 0xFF);
+        }
+        return "remote#" + Integer.toHexString(hash);
     }
 
     @Override
@@ -171,6 +198,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             ctx.write(msg, promise);
             return;
         }
+        PacketEventsVersionBridge.normalizeLegacyUserIfPresent(encodeConn);
         try (LegacyOutboundEncoding.Scope ignored = LegacyOutboundEncoding.enterScoped(encodeConn)) {
             writeTranslated(ctx, msg, promise);
         }
@@ -318,9 +346,6 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         if (msg instanceof ClientboundBlockUpdatePacket blockUpdate) {
             return remapBlockUpdate(blockUpdate);
         }
-        if (msg instanceof ClientboundSectionBlocksUpdatePacket sectionUpdate) {
-            return remapSectionBlocksUpdate(sectionUpdate);
-        }
         if (msg instanceof ClientboundAddEntityPacket addEntity) {
             return remapEntitySpawn(addEntity);
         }
@@ -335,9 +360,6 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         }
         if (msg instanceof ClientboundSetPlayerInventoryPacket inventoryPacket) {
             return remapSetPlayerInventory(inventoryPacket);
-        }
-        if (msg instanceof ClientboundSetEquipmentPacket setEquipmentPacket) {
-            return remapSetEquipment(setEquipmentPacket);
         }
         if (msg instanceof ClientboundUpdateRecipesPacket recipesPacket) {
             return remapUpdateRecipes(recipesPacket);
@@ -375,7 +397,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         if (server != null) {
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 if (p.getId() == entityId) {
-                    return EntityType.PLAYER;
+                    return p.getType();
                 }
             }
         }
@@ -412,9 +434,24 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     private static EntityType<?> toClientVisibleEntityType(EntityType<?> actual) {
         Identifier actualKey = BuiltInRegistries.ENTITY_TYPE.getKey(actual);
         if (actualKey != null && LegacyLinkConstants.SULFUR_CUBE_ENTITY_ID.contentEquals(actualKey.toString())) {
-            return EntityType.SLIME;
+            return LEGACY_SLIME_TYPE;
         }
         return actual;
+    }
+
+    private static EntityType<?> resolveEntityType(String id) {
+        return BuiltInRegistries.ENTITY_TYPE
+                .get(Identifier.parse(id))
+                .map(Holder.Reference::value)
+                .orElseThrow(() -> new IllegalStateException("[LegacyLink] Missing required entity type: " + id));
+    }
+
+    private static boolean isEntityType(@Nullable EntityType<?> type, String id) {
+        if (type == null) {
+            return false;
+        }
+        Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+        return key != null && id.contentEquals(key.toString());
     }
 
     private void prefetchBundleSpawnsRecursively(Packet<?> packet) {
@@ -453,7 +490,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private ClientboundStatusResponsePacket remapStatusResponse(ClientboundStatusResponsePacket packet) {
         ServerStatus status = packet.status();
-        ServerStatus.Version forcedLegacyVersion = new ServerStatus.Version("26.1.2", LegacyLinkConstants.PROTOCOL_26_1);
+        ServerStatus.Version forcedLegacyVersion = new ServerStatus.Version("26.1.2", LegacyLinkConstants.PROTOCOL_26_1_2);
         ServerStatus remapped = new ServerStatus(
                 status.description(),
                 status.players(),
@@ -598,7 +635,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                     false
             );
         }
-        if (Boolean.getBoolean("legacylink.tracePlayerEntityData") && clientType == EntityType.PLAYER) {
+        if (Boolean.getBoolean("legacylink.tracePlayerEntityData") && isEntityType(clientType, "minecraft:player")) {
             int max = -1;
             StringBuilder sb = new StringBuilder();
             for (var v : items) {
@@ -610,24 +647,18 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             }
             LegacyLinkMod.LOGGER.warn("[LegacyLink][EntityDataTrace] player eid={} maxId={} ids=[{}]", entityId, max, sb);
         }
-        var cubeRewritten = CubeMobEntityData2661.rewriteIfNeeded(entityId, items, clientType);
-        if (cubeRewritten != null) {
-            items = cubeRewritten;
-        }
-        var villagerRewritten = VillagerEntityData2661.rewriteIfNeeded(
+        var entityMetadataRewritten = EntityMetadataRewriter2661.rewriteForLegacy(
                 entityId,
-                items,
+                clientType,
                 prefetchVisibleType,
-                recipientEntityType);
-        if (villagerRewritten != null) {
-            items = villagerRewritten;
-        }
-        var tailTrimmed = Vanilla261EntityMetadataTailTrim2661.trimIfNeeded(entityId, items, clientType);
-        if (tailTrimmed != null) {
-            items = tailTrimmed;
+                recipientEntityType,
+                items
+        );
+        if (entityMetadataRewritten != null) {
+            items = entityMetadataRewritten;
         }
         EntityDataRewriteTrace.logIfChanged(entityId, entityDataIdsBefore, EntityDataRewriteTrace.formatSortedIds(items));
-        if (cubeRewritten != null || villagerRewritten != null || tailTrimmed != null) {
+        if (entityMetadataRewritten != null) {
             return new ClientboundSetEntityDataPacket(entityId, items);
         }
         return packet;
@@ -704,21 +735,6 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         return new ClientboundSetPlayerInventoryPacket(packet.slot(), remapped);
     }
 
-    public ClientboundSetEquipmentPacket remapSetEquipment(ClientboundSetEquipmentPacket packet) {
-        List<Pair<net.minecraft.world.entity.EquipmentSlot, ItemStack>> original = packet.getSlots();
-        List<Pair<net.minecraft.world.entity.EquipmentSlot, ItemStack>> rewritten = new ArrayList<>(original.size());
-        boolean changed = false;
-        for (Pair<net.minecraft.world.entity.EquipmentSlot, ItemStack> entry : original) {
-            ItemStack remapped = ItemRewriter.remapStack(entry.getSecond());
-            rewritten.add(Pair.of(entry.getFirst(), remapped));
-            changed |= remapped != entry.getSecond();
-        }
-        if (!changed) {
-            return packet;
-        }
-        return new ClientboundSetEquipmentPacket(packet.getEntity(), rewritten);
-    }
-
     @SuppressWarnings("unchecked")
     public ClientboundUpdateRecipesPacket remapUpdateRecipes(ClientboundUpdateRecipesPacket packet) {
         try {
@@ -733,7 +749,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                 Set<net.minecraft.core.Holder<Item>> remappedItems = new HashSet<>(items.size());
                 boolean setChanged = false;
                 for (net.minecraft.core.Holder<Item> holder : items) {
-                    Item remapped = ItemRewriter.remapItemToLegacySafe(holder.value());
+                    Item remapped = ItemRewriter.remapItemForLegacyRegistryEncoding(holder.value());
                     remappedItems.add(remapped.builtInRegistryHolder());
                     setChanged |= remapped != holder.value();
                 }
@@ -745,14 +761,84 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                     remappedSets.put(entry.getKey(), set);
                 }
             }
-            if (changed) {
-                LegacyLinkMod.LOGGER.debug("[LegacyLink] Recipe property sets contained legacy-incompatible items; strict guard applied");
-                return new ClientboundUpdateRecipesPacket(remappedSets, packet.stonecutterRecipes());
+            SelectableRecipe.SingleInputSet<StonecutterRecipe> stonecutter = packet.stonecutterRecipes();
+            SelectableRecipe.SingleInputSet<StonecutterRecipe> remappedStonecutter = stonecutter;
+            if (!stonecutter.entries().isEmpty()) {
+                List<SelectableRecipe.SingleInputEntry<StonecutterRecipe>> rewrittenEntries =
+                        new ArrayList<>(stonecutter.entries().size());
+                boolean stonecutterChanged = false;
+                for (SelectableRecipe.SingleInputEntry<StonecutterRecipe> entry : stonecutter.entries()) {
+                    Ingredient remappedInput = RecipeBookAddRewriter.remapIngredient(entry.input());
+                    SelectableRecipe<StonecutterRecipe> selectable = entry.recipe();
+                    SlotDisplay originalDisplay = selectable.optionDisplay();
+                    SlotDisplay remappedDisplay = RecipeBookAddRewriter.remapSlotDisplay(originalDisplay);
+                    SelectableRecipe<StonecutterRecipe> remappedSelectable = selectable;
+                    if (remappedDisplay != originalDisplay) {
+                        remappedSelectable = new SelectableRecipe<>(remappedDisplay, selectable.recipe());
+                        stonecutterChanged = true;
+                    }
+                    if (remappedInput != entry.input()) {
+                        stonecutterChanged = true;
+                    }
+                    rewrittenEntries.add(new SelectableRecipe.SingleInputEntry<>(remappedInput, remappedSelectable));
+                }
+                if (stonecutterChanged) {
+                    remappedStonecutter = new SelectableRecipe.SingleInputSet<>(rewrittenEntries);
+                    changed = true;
+                }
             }
-            return packet;
+            ClientboundUpdateRecipesPacket rewrittenPacket = changed
+                    ? new ClientboundUpdateRecipesPacket(remappedSets, remappedStonecutter)
+                    : packet;
+            if (containsUnsafeRecipeIds(rewrittenPacket)) {
+                LegacyLinkMod.LOGGER.warn(
+                        "[LegacyLink] update_recipes still contains item ids outside legacy membership set; sending empty recipe sync to prevent client decode crash"
+                );
+                return new ClientboundUpdateRecipesPacket(Map.of(), SelectableRecipe.SingleInputSet.empty());
+            }
+            if (changed) {
+                LegacyLinkMod.LOGGER.debug("[LegacyLink] update_recipes payload contained legacy-incompatible items; strict guard applied");
+            }
+            return rewrittenPacket;
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("[LegacyLink] remapUpdateRecipes reflection failed", e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private boolean containsUnsafeRecipeIds(ClientboundUpdateRecipesPacket packet) throws ReflectiveOperationException {
+        for (RecipePropertySet set : packet.itemSets().values()) {
+            Set<net.minecraft.core.Holder<Item>> items =
+                    (Set<net.minecraft.core.Holder<Item>>) RECIPE_ITEMS_FIELD.get(set);
+            for (net.minecraft.core.Holder<Item> holder : items) {
+                if (!RegistryRemapper.isLegacyItemWireId(Item.getId(holder.value()))) {
+                    return true;
+                }
+            }
+        }
+        for (SelectableRecipe.SingleInputEntry<StonecutterRecipe> entry : packet.stonecutterRecipes().entries()) {
+            for (var holder : entry.input().items().toList()) {
+                if (!RegistryRemapper.isLegacyItemWireId(Item.getId(holder.value()))) {
+                    return true;
+                }
+            }
+            if (containsUnsafeSlotDisplay(entry.recipe().optionDisplay())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean containsUnsafeSlotDisplay(SlotDisplay display) {
+        return SlotDisplayUtils.anyMatch(display, slotDisplay -> {
+            if (slotDisplay instanceof SlotDisplay.ItemSlotDisplay itemDisplay) {
+                return !RegistryRemapper.isLegacyItemWireId(Item.getId(itemDisplay.item().value()));
+            }
+            if (slotDisplay instanceof SlotDisplay.ItemStackSlotDisplay stackDisplay) {
+                return !RegistryRemapper.isLegacyItemWireId(Item.getId(stackDisplay.stack().create().getItem()));
+            }
+            return false;
+        });
     }
 
     public ClientboundRecipeBookAddPacket remapRecipeBookAdd(ClientboundRecipeBookAddPacket packet) {
@@ -822,6 +908,9 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     }
 
     public ClientboundSectionBlocksUpdatePacket remapSectionBlocksUpdate(ClientboundSectionBlocksUpdatePacket packet) {
+        if (Boolean.getBoolean("legacylink.traceSectionBlocksUpdate")) {
+            LegacyLinkMod.LOGGER.info("[LegacyLink][SectionBlocksTrace] phase=dispatch packet={}", packet.type().id());
+        }
         return BlockStatePacketRewriter.remapSectionBlocksUpdate(packet);
     }
 
@@ -835,7 +924,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         EntityType<?> type = packet.getType();
         Identifier typeId = BuiltInRegistries.ENTITY_TYPE.getKey(type);
         if (typeId != null && typeId.toString().equals(LegacyLinkConstants.SULFUR_CUBE_ENTITY_ID)) {
-            clientVisibleEntityTypeById.put(id, EntityType.SLIME);
+            clientVisibleEntityTypeById.put(id, LEGACY_SLIME_TYPE);
             remappedLegacyEntityIds.add(id);
             return;
         }
@@ -854,7 +943,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             // Sulfur cube is visually similar to slime; send slime instead
             return new ClientboundAddEntityPacket(
                     packet.getId(), packet.getUUID(), packet.getX(), packet.getY(), packet.getZ(),
-                    packet.getXRot(), packet.getYRot(), EntityType.SLIME, 1,
+                    packet.getXRot(), packet.getYRot(), LEGACY_SLIME_TYPE, 1,
                     packet.getMovement(), packet.getYHeadRot()
             );
         }

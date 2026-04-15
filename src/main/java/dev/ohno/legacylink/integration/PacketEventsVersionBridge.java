@@ -1,21 +1,42 @@
 package dev.ohno.legacylink.integration;
 
 import dev.ohno.legacylink.LegacyLinkMod;
+import io.netty.util.AttributeKey;
 import net.minecraft.network.Connection;
 
 import java.lang.reflect.Method;
 
 /**
- * Keeps PacketEvents/Reaper on a normalized modern client version for LegacyLink sessions.
- * Legacy clients still use the 26.1 wire protocol; this only controls PacketEvents version-gated logic.
+ * Pins PacketEvents/Reaper to legacy-facing client semantics for LegacyLink sessions.
+ * Legacy clients still use protocol 775 on the wire; this only controls PacketEvents version-gated logic.
  */
 public final class PacketEventsVersionBridge {
 
     private static volatile boolean warnedUnavailable;
+    private static final AttributeKey<Boolean> NORMALIZED_ATTR = AttributeKey.valueOf("legacylink_pe_normalized");
 
     private PacketEventsVersionBridge() {}
 
+    /**
+     * Call as soon as a connection is marked legacy (handshake), before play-phase inbound packets are decoded.
+     * Otherwise the first serverbound play packets can be mapped with server (26.2) IDs while the wire is 26.1.
+     */
+    public static void normalizeLegacyUserIfPresent(Connection connection) {
+        normalizeLegacyUser0(connection);
+    }
+
+    /**
+     * @deprecated Prefer {@link #normalizeLegacyUserIfPresent(Connection)} — name was wrong (sets V_26_1 when available).
+     */
+    @Deprecated
     public static void force26_2IfPresent(Connection connection) {
+        normalizeLegacyUser0(connection);
+    }
+
+    private static void normalizeLegacyUser0(Connection connection) {
+        if (Boolean.TRUE.equals(connection.channel.attr(NORMALIZED_ATTR).get())) {
+            return;
+        }
         try {
             Class<?> packetEventsClass = Class.forName("com.github.retrooper.packetevents.PacketEvents");
             Object api = packetEventsClass.getMethod("getAPI").invoke(null);
@@ -36,28 +57,44 @@ public final class PacketEventsVersionBridge {
             }
 
             Class<?> clientVersionClass = Class.forName("com.github.retrooper.packetevents.protocol.player.ClientVersion");
-            Object normalizedVersion;
-            try {
-                @SuppressWarnings({"unchecked", "rawtypes"})
-                Object version = Enum.valueOf((Class<? extends Enum>) clientVersionClass.asSubclass(Enum.class), "V_26_2");
-                normalizedVersion = version;
-            } catch (IllegalArgumentException e) {
-                // PacketEvents present, but this build does not expose V_26_2.
+            Object normalizedVersion = resolveLegacyClientVersion(clientVersionClass);
+            if (normalizedVersion == null) {
+                // PacketEvents present, but this build does not expose expected snapshot constants.
                 logUnavailableOnce();
                 return;
             }
 
             Method setClientVersion = user.getClass().getMethod("setClientVersion", clientVersionClass);
             setClientVersion.invoke(user, normalizedVersion);
+            connection.channel.attr(NORMALIZED_ATTR).set(Boolean.TRUE);
         } catch (ClassNotFoundException e) {
             // PacketEvents is optional from LegacyLink's perspective.
             logUnavailableOnce();
         } catch (ReflectiveOperationException e) {
             LegacyLinkMod.LOGGER.warn(
-                    "[LegacyLink] Failed to force PacketEvents user client version to V_26_2 for {}: {}",
+                    "[LegacyLink] Failed to set PacketEvents user client version to legacy (V_26_1) for {}: {}",
                     connection.getRemoteAddress(),
                     e.toString()
             );
+        }
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static Object resolveLegacyClientVersion(Class<?> clientVersionClass) {
+        Class<? extends Enum> enumClass = (Class<? extends Enum>) clientVersionClass.asSubclass(Enum.class);
+        try {
+            /*
+             * PacketEvents uses enum ordinal as a tie-breaker when protocol ids are shared.
+             * For protocol 775, V_26_1 keeps pre-26.2 movement/attribute gates in Grim.
+             */
+            return Enum.valueOf(enumClass, "V_26_1");
+        } catch (IllegalArgumentException ignored) {
+            // Older/newer PE builds may only expose V_26_2.
+        }
+        try {
+            return Enum.valueOf(enumClass, "V_26_2");
+        } catch (IllegalArgumentException ignored) {
+            return null;
         }
     }
 

@@ -1,7 +1,9 @@
 package dev.ohno.legacylink.handler.rewrite;
 
 import dev.ohno.legacylink.runtime.LegacyRuntimeContext;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import org.jspecify.annotations.Nullable;
@@ -30,37 +32,54 @@ public final class Vanilla261EntityMetadataTailTrim2661 {
         if (type == null) {
             return -1;
         }
-        if (type == EntityType.SQUID) {
+        if (isEntityType(type, "minecraft:squid")) {
             return 17;
         }
-        if (type == EntityType.GLOW_SQUID) {
+        if (isEntityType(type, "minecraft:glow_squid")) {
             return 18;
         }
-        if (type == EntityType.CREEPER) {
+        if (isEntityType(type, "minecraft:creeper")) {
             return 18;
         }
-        if (type == EntityType.ENDERMAN) {
+        if (isEntityType(type, "minecraft:enderman")) {
             return 18;
         }
-        if (type == EntityType.ZOMBIE || type == EntityType.DROWNED || type == EntityType.HUSK || type == EntityType.ZOMBIFIED_PIGLIN) {
+        if (isEntityType(type, "minecraft:zombie")
+                || isEntityType(type, "minecraft:drowned")
+                || isEntityType(type, "minecraft:husk")
+                || isEntityType(type, "minecraft:zombified_piglin")) {
             return 18;
         }
-        if (type == EntityType.SKELETON || type == EntityType.STRAY || type == EntityType.WITHER_SKELETON || type == EntityType.BOGGED) {
+        if (isEntityType(type, "minecraft:skeleton")
+                || isEntityType(type, "minecraft:stray")
+                || isEntityType(type, "minecraft:wither_skeleton")
+                || isEntityType(type, "minecraft:bogged")) {
             return 16;
         }
-        if (type == EntityType.BAT) {
+        if (isEntityType(type, "minecraft:bat")) {
             return 16;
         }
-        if (type == EntityType.SALMON || type == EntityType.COD || type == EntityType.PUFFERFISH || type == EntityType.TROPICAL_FISH) {
+        if (isEntityType(type, "minecraft:salmon")
+                || isEntityType(type, "minecraft:cod")
+                || isEntityType(type, "minecraft:pufferfish")
+                || isEntityType(type, "minecraft:tropical_fish")) {
             return 17;
         }
-        if (type == EntityType.HOGLIN) {
+        if (isEntityType(type, "minecraft:hoglin")) {
             return 18;
         }
-        if (type == EntityType.PLAYER) {
+        if (isEntityType(type, "minecraft:player")) {
             return -1;
         }
         return -1;
+    }
+
+    private static boolean isEntityType(@Nullable EntityType<?> type, String id) {
+        if (type == null) {
+            return false;
+        }
+        Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+        return key != null && id.equals(key.toString());
     }
 
     /**

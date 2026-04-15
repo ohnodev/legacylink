@@ -35,7 +35,7 @@ LegacyLink is a **server-side only** Fabric mod. Install these on the **dedicate
 | Requirement | Role | Version this repo is built against |
 |-------------|------|-------------------------------------|
 | **Java** | JVM for the server | **25+** (see `build.gradle.kts` toolchain) |
-| **Minecraft** | Game / protocol | **`26.2-snapshot-2`** (`gradle.properties` → `minecraft_version`) |
+| **Minecraft** | Game / protocol | **`26.2-snapshot-3`** (`gradle.properties` → `minecraft_version`) |
 | **Fabric Loader** | Mod bootstrap | **`>= 0.19.1`** (`fabricloader` in `fabric.mod.json`) |
 | **Fabric API** | Library jar (`fabric-api` on Modrinth / Maven). Used at runtime (e.g. `ServerLifecycleEvents`). | **`>= 0.145.5`** — compile against **`0.145.5+26.2`** (`gradle.properties` → `fabric_version`). Use the **Fabric API build that matches your exact 26.2 snapshot** if yours differs. |
 | **MixinExtras** | Embedded in the LegacyLink jar (jar-in-jar). Registers `@WrapMethod` and related injectors at preLaunch; **not** a separate mod to install. | **0.5.3** (`build.gradle.kts`, `io.github.llamalad7:mixinextras-fabric`) |
@@ -75,7 +75,7 @@ cp prebuilt/legacylink-0.1.1.jar /path/to/server/mods/
 
 ### Known limitations (v0.1)
 
-- **Block state ID ceiling** (`MAX_26_1_BLOCKSTATE_ID` in `LegacyLinkConstants`) is the **inclusive** last index the legacy client accepts (`0..MAX`). Pinned to **26.1.1** (`30207`) so 26.2 palette IDs remap safely; setting it too high can crash legacy clients in `LinearPalette.read`.
+- **Mapping source of truth:** block states and items are translated from bundled 26.1.2/26.2-snapshot-3 dump tables by exact ID membership, not by "max legacy ID" thresholds.
 - **Item stacks (wire):** 26.2↔26.1 numeric item ids for legacy connections via `LegacyItemIdTable` + `ItemStackOptionalCodecMixin` (optional stacks, including creative untrusted codec) and `HashedStackActualItemMixin` (container clicks). Inbound decode is scoped to `PacketDecoder#decode` (`PacketDecoderMixin`).
 
 ## Configuration
@@ -127,7 +127,7 @@ This repository includes a **prebuilt** Fabric mod jar under `prebuilt/` for dir
 Current file:
 
 - `prebuilt/legacylink-0.1.1.jar`
-- SHA-256: `bb0c95bb9d4f3f91caab249df9ee20ea4acfb3f7ca2f6ca236bd319a584aaea2`
+- SHA-256: `c6bb0b01cb0675231938e8a62c90aaf88c6bb5fbce289e8992f93261fe57caa4`
 
 Verify:
 
