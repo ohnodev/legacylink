@@ -87,6 +87,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.lang.reflect.Constructor;
 import java.util.Set;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 
 import org.jspecify.annotations.Nullable;
 
@@ -174,8 +175,20 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                 "[LegacyLink] Outbound translator placed after '{}' (phase={}) for {}",
                 HandlerNames.PACKET_HANDLER,
                 phase,
-                connection.getRemoteAddress()
+                anonymizeAddress(connection.getRemoteAddress())
         );
+    }
+
+    private static String anonymizeAddress(@Nullable Object remoteAddress) {
+        if (remoteAddress == null) {
+            return "remote#null";
+        }
+        byte[] bytes = remoteAddress.toString().getBytes(StandardCharsets.UTF_8);
+        int hash = 0;
+        for (byte b : bytes) {
+            hash = (hash * 31) + (b & 0xFF);
+        }
+        return "remote#" + Integer.toHexString(hash);
     }
 
     @Override

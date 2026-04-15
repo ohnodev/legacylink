@@ -325,13 +325,14 @@ public final class RegistryRemapper {
     private static String loadTextBlob(String override, String resourcePath, String label) {
         if (override != null && !override.isBlank()) {
             Path p = Path.of(override);
+            String redactedName = String.valueOf(p.getFileName());
             if (!Files.exists(p)) {
-                throw new IllegalStateException("[LegacyLink] Mapping override path does not exist: " + override);
+                throw new IllegalStateException("[LegacyLink] Mapping override path does not exist: " + redactedName);
             }
             try {
                 return Files.readString(p, StandardCharsets.UTF_8);
             } catch (IOException e) {
-                throw new IllegalStateException("[LegacyLink] Failed reading override " + label + " from " + p, e);
+                throw new IllegalStateException("[LegacyLink] Failed reading override " + label + " from " + redactedName, e);
             }
         }
         try (InputStream in = RegistryRemapper.class.getResourceAsStream(resourcePath)) {

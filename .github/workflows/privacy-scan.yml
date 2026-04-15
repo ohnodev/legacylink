@@ -1,5 +1,8 @@
 name: Privacy Scan
 
+permissions:
+  contents: read
+
 on:
   pull_request:
   push:
@@ -12,9 +15,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
 
       - name: Scan for sensitive usernames and local paths
         run: bash scripts/check-sensitive-paths.sh

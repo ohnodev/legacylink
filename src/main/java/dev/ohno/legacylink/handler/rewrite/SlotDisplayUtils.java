@@ -97,15 +97,19 @@ public final class SlotDisplayUtils {
     }
 
     public static List<SlotDisplay> rewriteNested(List<SlotDisplay> displays, UnaryOperator<SlotDisplay> transformer) {
-        List<SlotDisplay> remapped = new ArrayList<>(displays.size());
-        boolean changed = false;
-        for (SlotDisplay nested : displays) {
+        List<SlotDisplay> remapped = null;
+        for (int i = 0; i < displays.size(); i++) {
+            SlotDisplay nested = displays.get(i);
             SlotDisplay mapped = rewrite(nested, transformer);
-            if (mapped != nested) {
-                changed = true;
+            if (remapped == null) {
+                if (mapped == nested) {
+                    continue;
+                }
+                remapped = new ArrayList<>(displays.size());
+                remapped.addAll(displays.subList(0, i));
             }
             remapped.add(mapped);
         }
-        return changed ? remapped : displays;
+        return remapped != null ? remapped : displays;
     }
 }
