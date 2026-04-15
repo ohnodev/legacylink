@@ -31,7 +31,10 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
 import net.minecraft.core.Holder;
+import net.minecraft.core.particles.BlockParticleOption;
+import net.minecraft.core.particles.ItemParticleOption;
 import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleType;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -80,6 +83,8 @@ import net.minecraft.world.item.crafting.SelectableRecipe;
 import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.display.SlotDisplay;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -615,13 +620,14 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private ClientboundLevelParticlesPacket remapLevelParticles(ClientboundLevelParticlesPacket packet) {
         ParticleOptions source = packet.getParticle();
-        Identifier particleId = BuiltInRegistries.PARTICLE_TYPE.getKey(source.getType());
+        ParticleOptions remappedParticle = remapParticleOptionsForLegacy(source);
+        Identifier particleId = BuiltInRegistries.PARTICLE_TYPE.getKey(remappedParticle.getType());
         if (particleId == null) {
-            return packet;
+            return remappedParticle == source ? packet : copyParticlePacket(packet, remappedParticle);
         }
         String key = particleId.toString();
         if (!LegacyLinkConstants.LEGACY_UNSUPPORTED_PARTICLE_IDS.contains(key)) {
-            return packet;
+            return remappedParticle == source ? packet : copyParticlePacket(packet, remappedParticle);
         }
         SimpleParticleType fallback = LEGACY_PARTICLE_FALLBACKS.getOrDefault(key, ParticleTypes.SMOKE);
         LegacyLinkMod.LOGGER.debug(
@@ -629,8 +635,36 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                 key,
                 BuiltInRegistries.PARTICLE_TYPE.getKey(fallback)
         );
+        return copyParticlePacket(packet, fallback);
+    }
+
+    private ParticleOptions remapParticleOptionsForLegacy(ParticleOptions source) {
+        if (source instanceof BlockParticleOption blockOpt) {
+            int currentStateId = Block.BLOCK_STATE_REGISTRY.getId(blockOpt.getState());
+            int remappedStateId = RegistryRemapper.remapBlockState(currentStateId);
+            if (remappedStateId != currentStateId) {
+                BlockState remappedState = Block.BLOCK_STATE_REGISTRY.byId(remappedStateId);
+                if (remappedState != null) {
+                    @SuppressWarnings("unchecked")
+                    ParticleType<BlockParticleOption> typed = (ParticleType<BlockParticleOption>) blockOpt.getType();
+                    return new BlockParticleOption(typed, remappedState);
+                }
+            }
+        }
+        if (source instanceof ItemParticleOption itemOpt) {
+            ItemStackTemplate remapped = ItemRewriter.remapTemplate(itemOpt.getItem());
+            if (remapped != itemOpt.getItem()) {
+                @SuppressWarnings("unchecked")
+                ParticleType<ItemParticleOption> typed = (ParticleType<ItemParticleOption>) itemOpt.getType();
+                return new ItemParticleOption(typed, remapped);
+            }
+        }
+        return source;
+    }
+
+    private ClientboundLevelParticlesPacket copyParticlePacket(ClientboundLevelParticlesPacket packet, ParticleOptions particle) {
         return new ClientboundLevelParticlesPacket(
-                fallback,
+                particle,
                 packet.isOverrideLimiter(),
                 packet.alwaysShow(),
                 packet.getX(),
