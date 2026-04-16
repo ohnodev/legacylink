@@ -104,6 +104,14 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private static final String HANDLER_NAME = "legacylink";
     private static final EntityType<?> LEGACY_SLIME_TYPE = resolveEntityType("minecraft:slime");
+
+    private static final long STATUS_LOG_INTERVAL_NS = 10_000_000_000L; // 10 seconds
+    private static final long STATUS_CACHE_TTL_NS = 1_000_000_000L; // 1 second
+    private static long statusInstallCount;
+    private static long statusInstallWindowStart = System.nanoTime();
+    private static volatile ClientboundStatusResponsePacket cachedStatusResponse;
+    private static volatile long statusCacheBuiltAt;
+
     private static final Map<String, SimpleParticleType> LEGACY_PARTICLE_FALLBACKS = Map.of(
             "minecraft:noxious_gas", ParticleTypes.SMOKE,
             "minecraft:noxious_gas_cloud", ParticleTypes.CLOUD,
@@ -204,12 +212,33 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                             + "; refusing addLast fallback (legacy translation would not run correctly).");
         }
         pipeline.addAfter(HandlerNames.PACKET_HANDLER, HANDLER_NAME, new LegacyPacketHandler());
-        LegacyLinkMod.LOGGER.info(
-                "[LegacyLink] Outbound translator placed after '{}' (phase={}) for {}",
-                HandlerNames.PACKET_HANDLER,
-                phase,
-                anonymizeAddress(connection.getRemoteAddress())
-        );
+
+        if ("status".equals(phase)) {
+            logStatusInstall();
+        } else {
+            LegacyLinkMod.LOGGER.info(
+                    "[LegacyLink] Outbound translator placed after '{}' (phase={}) for {}",
+                    HandlerNames.PACKET_HANDLER,
+                    phase,
+                    anonymizeAddress(connection.getRemoteAddress())
+            );
+        }
+    }
+
+    private static synchronized void logStatusInstall() {
+        statusInstallCount++;
+        long now = System.nanoTime();
+        long elapsed = now - statusInstallWindowStart;
+        if (elapsed >= STATUS_LOG_INTERVAL_NS) {
+            long elapsedSeconds = elapsed / 1_000_000_000L;
+            LegacyLinkMod.LOGGER.info(
+                    "[LegacyLink] STATUS translator installed {} time(s) in the last {}s",
+                    statusInstallCount,
+                    elapsedSeconds
+            );
+            statusInstallCount = 0;
+            statusInstallWindowStart = now;
+        }
     }
 
     private static String anonymizeAddress(@Nullable Object remoteAddress) {
@@ -524,7 +553,12 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         return new ClientboundBundlePacket(rewritten);
     }
 
-    private ClientboundStatusResponsePacket remapStatusResponse(ClientboundStatusResponsePacket packet) {
+    private static ClientboundStatusResponsePacket remapStatusResponse(ClientboundStatusResponsePacket packet) {
+        long now = System.nanoTime();
+        ClientboundStatusResponsePacket cached = cachedStatusResponse;
+        if (cached != null && (now - statusCacheBuiltAt) < STATUS_CACHE_TTL_NS) {
+            return cached;
+        }
         ServerStatus status = packet.status();
         ServerStatus.Version forcedLegacyVersion = new ServerStatus.Version("26.1.2", LegacyLinkConstants.PROTOCOL_26_1_2);
         ServerStatus remapped = new ServerStatus(
@@ -534,7 +568,10 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                 status.favicon(),
                 status.enforcesSecureChat()
         );
-        return new ClientboundStatusResponsePacket(remapped);
+        ClientboundStatusResponsePacket built = new ClientboundStatusResponsePacket(remapped);
+        cachedStatusResponse = built;
+        statusCacheBuiltAt = now;
+        return built;
     }
 
     private ClientboundRegistryDataPacket filterRegistryData(ClientboundRegistryDataPacket packet) {
