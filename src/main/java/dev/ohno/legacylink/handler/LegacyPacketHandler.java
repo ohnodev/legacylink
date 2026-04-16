@@ -118,6 +118,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     private static final Constructor<RecipePropertySet> RECIPE_PROP_SET_CTOR;
 
     static {
+        validateParticleFallbackCoverage();
         try {
             Constructor<ClientboundUpdateAttributesPacket> ctor =
                     ClientboundUpdateAttributesPacket.class.getDeclaredConstructor(int.class, List.class);
@@ -139,6 +140,23 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             RECIPE_PROP_SET_CTOR.setAccessible(true);
         } catch (NoSuchMethodException | NoSuchFieldException e) {
             throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    private static void validateParticleFallbackCoverage() {
+        Set<String> unsupported = LegacyLinkConstants.LEGACY_UNSUPPORTED_PARTICLE_IDS;
+        Set<String> fallbackKeys = LEGACY_PARTICLE_FALLBACKS.keySet();
+
+        Set<String> missing = new HashSet<>(unsupported);
+        missing.removeAll(fallbackKeys);
+
+        Set<String> unexpected = new HashSet<>(fallbackKeys);
+        unexpected.removeAll(unsupported);
+
+        if (!missing.isEmpty() || !unexpected.isEmpty()) {
+            throw new IllegalStateException(
+                    "[LegacyLink] Particle fallback coverage mismatch: missing=" + missing + ", unexpected=" + unexpected
+            );
         }
     }
     private final Set<Integer> remappedLegacyEntityIds = new HashSet<>();
@@ -629,7 +647,10 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         if (!LegacyLinkConstants.LEGACY_UNSUPPORTED_PARTICLE_IDS.contains(key)) {
             return remappedParticle == source ? packet : copyParticlePacket(packet, remappedParticle);
         }
-        SimpleParticleType fallback = LEGACY_PARTICLE_FALLBACKS.getOrDefault(key, ParticleTypes.SMOKE);
+        SimpleParticleType fallback = LEGACY_PARTICLE_FALLBACKS.get(key);
+        if (fallback == null) {
+            throw new IllegalStateException("[LegacyLink] Missing particle fallback for unsupported id: " + key);
+        }
         LegacyLinkMod.LOGGER.debug(
                 "[LegacyLink] Remapped unsupported 26.2 particle {} -> {} for 26.1 client",
                 key,
