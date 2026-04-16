@@ -1,7 +1,7 @@
 package dev.ohno.legacylink.mixin;
 
-import dev.ohno.legacylink.LegacyLinkConstants;
 import dev.ohno.legacylink.connection.LegacyTracker;
+import dev.ohno.legacylink.status.LegacyStatusCacheManager;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.status.ClientboundStatusResponsePacket;
 import net.minecraft.network.protocol.status.ServerStatus;
@@ -13,8 +13,6 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-
-import java.util.Optional;
 
 @Mixin(ServerStatusPacketListenerImpl.class)
 public abstract class StatusPacketMixin {
@@ -33,18 +31,11 @@ public abstract class StatusPacketMixin {
         }
 
         this.hasRequestedStatus = true;
-        ServerStatus.Version forcedLegacyVersion = new ServerStatus.Version(
-                "26.1.2",
-                LegacyLinkConstants.PROTOCOL_26_1_2
-        );
-        ServerStatus remapped = new ServerStatus(
-                this.status.description(),
-                this.status.players(),
-                Optional.of(forcedLegacyVersion),
-                this.status.favicon(),
-                this.status.enforcesSecureChat()
-        );
-        this.connection.send(new ClientboundStatusResponsePacket(remapped));
+        this.connection.send(getOrBuildCachedResponse(this.status));
         ci.cancel();
+    }
+
+    private static ClientboundStatusResponsePacket getOrBuildCachedResponse(ServerStatus current) {
+        return LegacyStatusCacheManager.getOrBuildForStatusListener(current);
     }
 }

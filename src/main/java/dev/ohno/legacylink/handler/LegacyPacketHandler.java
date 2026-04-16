@@ -23,6 +23,7 @@ import dev.ohno.legacylink.handler.rewrite.SlotDisplayUtils;
 import dev.ohno.legacylink.mapping.LegacyAttributeWireTable;
 import dev.ohno.legacylink.mapping.RegistryRemapper;
 import dev.ohno.legacylink.runtime.LegacyRuntimeContext;
+import dev.ohno.legacylink.status.LegacyStatusCacheManager;
 import dev.ohno.legacylink.telemetry.TranslationStats;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -65,7 +66,6 @@ import net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket;
 import net.minecraft.network.protocol.status.ClientboundStatusResponsePacket;
-import net.minecraft.network.protocol.status.ServerStatus;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -91,7 +91,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.lang.reflect.Constructor;
 import java.util.Set;
@@ -104,6 +103,11 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private static final String HANDLER_NAME = "legacylink";
     private static final EntityType<?> LEGACY_SLIME_TYPE = resolveEntityType("minecraft:slime");
+
+    private static final long STATUS_LOG_INTERVAL_NS = 10_000_000_000L; // 10 seconds
+    private static long statusInstallCount;
+    private static long statusInstallWindowStart;
+
     private static final Map<String, SimpleParticleType> LEGACY_PARTICLE_FALLBACKS = Map.of(
             "minecraft:noxious_gas", ParticleTypes.SMOKE,
             "minecraft:noxious_gas_cloud", ParticleTypes.CLOUD,
@@ -204,12 +208,36 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                             + "; refusing addLast fallback (legacy translation would not run correctly).");
         }
         pipeline.addAfter(HandlerNames.PACKET_HANDLER, HANDLER_NAME, new LegacyPacketHandler());
-        LegacyLinkMod.LOGGER.info(
-                "[LegacyLink] Outbound translator placed after '{}' (phase={}) for {}",
-                HandlerNames.PACKET_HANDLER,
-                phase,
-                anonymizeAddress(connection.getRemoteAddress())
-        );
+
+        if ("status".equals(phase)) {
+            logStatusInstall();
+        } else {
+            LegacyLinkMod.LOGGER.info(
+                    "[LegacyLink] Outbound translator placed after '{}' (phase={}) for {}",
+                    HandlerNames.PACKET_HANDLER,
+                    phase,
+                    anonymizeAddress(connection.getRemoteAddress())
+            );
+        }
+    }
+
+    private static synchronized void logStatusInstall() {
+        long now = System.nanoTime();
+        if (statusInstallCount == 0L) {
+            statusInstallWindowStart = now;
+        }
+        statusInstallCount++;
+        long elapsed = now - statusInstallWindowStart;
+        if (elapsed >= STATUS_LOG_INTERVAL_NS) {
+            long elapsedSeconds = elapsed / 1_000_000_000L;
+            LegacyLinkMod.LOGGER.info(
+                    "[LegacyLink] STATUS translator installed {} time(s) in the last {}s",
+                    statusInstallCount,
+                    elapsedSeconds
+            );
+            statusInstallCount = 0;
+            statusInstallWindowStart = now;
+        }
     }
 
     private static String anonymizeAddress(@Nullable Object remoteAddress) {
@@ -524,17 +552,8 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         return new ClientboundBundlePacket(rewritten);
     }
 
-    private ClientboundStatusResponsePacket remapStatusResponse(ClientboundStatusResponsePacket packet) {
-        ServerStatus status = packet.status();
-        ServerStatus.Version forcedLegacyVersion = new ServerStatus.Version("26.1.2", LegacyLinkConstants.PROTOCOL_26_1_2);
-        ServerStatus remapped = new ServerStatus(
-                status.description(),
-                status.players(),
-                Optional.of(forcedLegacyVersion),
-                status.favicon(),
-                status.enforcesSecureChat()
-        );
-        return new ClientboundStatusResponsePacket(remapped);
+    private static ClientboundStatusResponsePacket remapStatusResponse(ClientboundStatusResponsePacket packet) {
+        return LegacyStatusCacheManager.getOrBuildForOutboundHandler(packet.status());
     }
 
     private ClientboundRegistryDataPacket filterRegistryData(ClientboundRegistryDataPacket packet) {
