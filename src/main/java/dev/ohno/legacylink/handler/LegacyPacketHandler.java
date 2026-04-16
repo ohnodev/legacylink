@@ -108,9 +108,18 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     private static final long STATUS_LOG_INTERVAL_NS = 10_000_000_000L; // 10 seconds
     private static final long STATUS_CACHE_TTL_NS = 1_000_000_000L; // 1 second
     private static long statusInstallCount;
-    private static long statusInstallWindowStart = System.nanoTime();
-    private static volatile ClientboundStatusResponsePacket cachedStatusResponse;
-    private static volatile long statusCacheBuiltAt;
+    private static long statusInstallWindowStart;
+    private static volatile StatusCache statusCache;
+
+    private static final class StatusCache {
+        private final ClientboundStatusResponsePacket response;
+        private final long builtAt;
+
+        private StatusCache(ClientboundStatusResponsePacket response, long builtAt) {
+            this.response = response;
+            this.builtAt = builtAt;
+        }
+    }
 
     private static final Map<String, SimpleParticleType> LEGACY_PARTICLE_FALLBACKS = Map.of(
             "minecraft:noxious_gas", ParticleTypes.SMOKE,
@@ -226,8 +235,11 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     }
 
     private static synchronized void logStatusInstall() {
-        statusInstallCount++;
         long now = System.nanoTime();
+        if (statusInstallCount == 0L) {
+            statusInstallWindowStart = now;
+        }
+        statusInstallCount++;
         long elapsed = now - statusInstallWindowStart;
         if (elapsed >= STATUS_LOG_INTERVAL_NS) {
             long elapsedSeconds = elapsed / 1_000_000_000L;
@@ -555,9 +567,9 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private static ClientboundStatusResponsePacket remapStatusResponse(ClientboundStatusResponsePacket packet) {
         long now = System.nanoTime();
-        ClientboundStatusResponsePacket cached = cachedStatusResponse;
-        if (cached != null && (now - statusCacheBuiltAt) < STATUS_CACHE_TTL_NS) {
-            return cached;
+        StatusCache cached = statusCache;
+        if (cached != null && (now - cached.builtAt) < STATUS_CACHE_TTL_NS) {
+            return cached.response;
         }
         ServerStatus status = packet.status();
         ServerStatus.Version forcedLegacyVersion = new ServerStatus.Version("26.1.2", LegacyLinkConstants.PROTOCOL_26_1_2);
@@ -569,8 +581,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                 status.enforcesSecureChat()
         );
         ClientboundStatusResponsePacket built = new ClientboundStatusResponsePacket(remapped);
-        cachedStatusResponse = built;
-        statusCacheBuiltAt = now;
+        statusCache = new StatusCache(built, now);
         return built;
     }
 

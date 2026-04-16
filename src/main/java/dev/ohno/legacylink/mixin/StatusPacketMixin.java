@@ -21,9 +21,19 @@ public abstract class StatusPacketMixin {
 
     private static final long STATUS_CACHE_TTL_NS = 1_000_000_000L; // 1 second
 
-    private static volatile ClientboundStatusResponsePacket cachedLegacyResponse;
-    private static volatile long cachedAtNanos;
-    private static volatile ServerStatus cachedSourceStatus;
+    private static volatile LegacyStatusCache cachedStatus;
+
+    private static final class LegacyStatusCache {
+        private final ClientboundStatusResponsePacket packet;
+        private final ServerStatus sourceStatus;
+        private final long timestamp;
+
+        private LegacyStatusCache(ClientboundStatusResponsePacket packet, ServerStatus sourceStatus, long timestamp) {
+            this.packet = packet;
+            this.sourceStatus = sourceStatus;
+            this.timestamp = timestamp;
+        }
+    }
 
     @Shadow @Final private Connection connection;
     @Shadow @Final private ServerStatus status;
@@ -45,9 +55,9 @@ public abstract class StatusPacketMixin {
 
     private static ClientboundStatusResponsePacket getOrBuildCachedResponse(ServerStatus current) {
         long now = System.nanoTime();
-        ClientboundStatusResponsePacket cached = cachedLegacyResponse;
-        if (cached != null && cachedSourceStatus == current && (now - cachedAtNanos) < STATUS_CACHE_TTL_NS) {
-            return cached;
+        LegacyStatusCache cached = cachedStatus;
+        if (cached != null && cached.sourceStatus == current && (now - cached.timestamp) < STATUS_CACHE_TTL_NS) {
+            return cached.packet;
         }
         ServerStatus.Version forcedLegacyVersion = new ServerStatus.Version(
                 "26.1.2",
@@ -61,9 +71,7 @@ public abstract class StatusPacketMixin {
                 current.enforcesSecureChat()
         );
         ClientboundStatusResponsePacket built = new ClientboundStatusResponsePacket(remapped);
-        cachedLegacyResponse = built;
-        cachedSourceStatus = current;
-        cachedAtNanos = now;
+        cachedStatus = new LegacyStatusCache(built, current, now);
         return built;
     }
 }
