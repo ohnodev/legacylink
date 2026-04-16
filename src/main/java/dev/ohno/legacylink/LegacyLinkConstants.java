@@ -88,6 +88,16 @@ public final class LegacyLinkConstants {
             "minecraft:air_drag_modifier",
             "minecraft:friction_modifier"
     );
+    /**
+     * 26.2-only particles not present on 26.1 clients.
+     * These must be filtered from registry sync and remapped in outbound particle packets.
+     */
+    public static final Set<String> LEGACY_UNSUPPORTED_PARTICLE_IDS = Set.of(
+            "minecraft:noxious_gas",
+            "minecraft:noxious_gas_cloud",
+            "minecraft:sulfur_bubbles",
+            "minecraft:sulfur_cube_goo"
+    );
 
     /** Built-in items omitted from the 26.1 wire-id sequence (26.2-only); keep {@link #SULFUR_ITEM_IDS} authoritative. */
     public static boolean is26_2OnlyItemId(String registryId) {

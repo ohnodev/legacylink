@@ -31,6 +31,12 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
 import net.minecraft.core.Holder;
+import net.minecraft.core.particles.BlockParticleOption;
+import net.minecraft.core.particles.ItemParticleOption;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleType;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.particles.SimpleParticleType;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.Connection;
@@ -46,6 +52,7 @@ import net.minecraft.network.protocol.game.ClientboundBundlePacket;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
+import net.minecraft.network.protocol.game.ClientboundLevelParticlesPacket;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
@@ -76,6 +83,8 @@ import net.minecraft.world.item.crafting.SelectableRecipe;
 import net.minecraft.world.item.crafting.StonecutterRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.display.SlotDisplay;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -95,6 +104,12 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private static final String HANDLER_NAME = "legacylink";
     private static final EntityType<?> LEGACY_SLIME_TYPE = resolveEntityType("minecraft:slime");
+    private static final Map<String, SimpleParticleType> LEGACY_PARTICLE_FALLBACKS = Map.of(
+            "minecraft:noxious_gas", ParticleTypes.SMOKE,
+            "minecraft:noxious_gas_cloud", ParticleTypes.CLOUD,
+            "minecraft:sulfur_bubbles", ParticleTypes.BUBBLE,
+            "minecraft:sulfur_cube_goo", ParticleTypes.ITEM_SLIME
+    );
 
     private static final Constructor<ClientboundUpdateAttributesPacket> UPDATE_ATTRIBUTES_REBUILD_CTOR;
     private static final Field TAGS_NETWORK_PAYLOAD_TAGS_FIELD;
@@ -103,6 +118,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     private static final Constructor<RecipePropertySet> RECIPE_PROP_SET_CTOR;
 
     static {
+        validateParticleFallbackCoverage();
         try {
             Constructor<ClientboundUpdateAttributesPacket> ctor =
                     ClientboundUpdateAttributesPacket.class.getDeclaredConstructor(int.class, List.class);
@@ -124,6 +140,23 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             RECIPE_PROP_SET_CTOR.setAccessible(true);
         } catch (NoSuchMethodException | NoSuchFieldException e) {
             throw new ExceptionInInitializerError(e);
+        }
+    }
+
+    private static void validateParticleFallbackCoverage() {
+        Set<String> unsupported = LegacyLinkConstants.LEGACY_UNSUPPORTED_PARTICLE_IDS;
+        Set<String> fallbackKeys = LEGACY_PARTICLE_FALLBACKS.keySet();
+
+        Set<String> missing = new HashSet<>(unsupported);
+        missing.removeAll(fallbackKeys);
+
+        Set<String> unexpected = new HashSet<>(fallbackKeys);
+        unexpected.removeAll(unsupported);
+
+        if (!missing.isEmpty() || !unexpected.isEmpty()) {
+            throw new IllegalStateException(
+                    "[LegacyLink] Particle fallback coverage mismatch: missing=" + missing + ", unexpected=" + unexpected
+            );
         }
     }
     private final Set<Integer> remappedLegacyEntityIds = new HashSet<>();
@@ -370,6 +403,9 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         if (msg instanceof ClientboundUpdateTagsPacket tagsPacket) {
             return remapUpdateTags(tagsPacket);
         }
+        if (msg instanceof ClientboundLevelParticlesPacket levelParticles) {
+            return remapLevelParticles(levelParticles);
+        }
         return msg;
     }
 
@@ -532,6 +568,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
         boolean changed = false;
         boolean attributeRegistry = Registries.ATTRIBUTE.equals(registryKey);
         boolean entityTypeRegistry = Registries.ENTITY_TYPE.equals(registryKey);
+        boolean particleRegistry = Registries.PARTICLE_TYPE.equals(registryKey);
         int legacyAttributeStrips = 0;
         List<String> removedEntryIds = new ArrayList<>();
 
@@ -542,6 +579,8 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
             boolean strip26_2OnlyAttribute =
                     attributeRegistry && LegacyLinkConstants.LEGACY_UNSUPPORTED_ATTRIBUTE_IDS.contains(entryId);
+            boolean strip26_2OnlyParticle =
+                    particleRegistry && LegacyLinkConstants.LEGACY_UNSUPPORTED_PARTICLE_IDS.contains(entryId);
             /*
              * {@code minecraft:sulfur_cube} is 26.2-only; drop it from entity_type sync so 26.1 never decodes it.
              * That renumbers following vanilla types on the wire — {@link dev.ohno.legacylink.mixin.ClientboundAddEntityPacketMixin}
@@ -551,6 +590,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             boolean stripSulfurCubeEntityType =
                     entityTypeRegistry && LegacyLinkConstants.SULFUR_CUBE_ENTITY_ID.contentEquals(entryId);
             boolean stripSulfurOrModEntry = !entityTypeRegistry
+                    && !particleRegistry
                     && (LegacyLinkConstants.SULFUR_BLOCK_IDS.contains(entryId)
                     || LegacyLinkConstants.SULFUR_ITEM_IDS.contains(entryId)
                     || entryId.equals(LegacyLinkConstants.SULFUR_CAVES_BIOME_ID)
@@ -558,6 +598,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
                     || entryId.contains("sulfur"));
             if (stripSulfurCubeEntityType
                     || stripSulfurOrModEntry
+                    || strip26_2OnlyParticle
                     || strip26_2OnlyAttribute) {
                 iterator.remove();
                 changed = true;
@@ -594,6 +635,77 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             return new ClientboundRegistryDataPacket(packet.registry(), filtered);
         }
         return packet;
+    }
+
+    private ClientboundLevelParticlesPacket remapLevelParticles(ClientboundLevelParticlesPacket packet) {
+        ParticleOptions source = packet.getParticle();
+        ParticleOptions remappedParticle = remapParticleOptionsForLegacy(source);
+        Identifier particleId = BuiltInRegistries.PARTICLE_TYPE.getKey(remappedParticle.getType());
+        if (particleId == null) {
+            return remappedParticle == source ? packet : copyParticlePacket(packet, remappedParticle);
+        }
+        String key = particleId.toString();
+        if (!LegacyLinkConstants.LEGACY_UNSUPPORTED_PARTICLE_IDS.contains(key)) {
+            return remappedParticle == source ? packet : copyParticlePacket(packet, remappedParticle);
+        }
+        SimpleParticleType fallback = LEGACY_PARTICLE_FALLBACKS.get(key);
+        if (fallback == null) {
+            throw new IllegalStateException("[LegacyLink] Missing particle fallback for unsupported id: " + key);
+        }
+        LegacyLinkMod.LOGGER.debug(
+                "[LegacyLink] Remapped unsupported 26.2 particle {} -> {} for 26.1 client",
+                key,
+                BuiltInRegistries.PARTICLE_TYPE.getKey(fallback)
+        );
+        return copyParticlePacket(packet, fallback);
+    }
+
+    private ParticleOptions remapParticleOptionsForLegacy(ParticleOptions source) {
+        if (source instanceof BlockParticleOption blockOpt) {
+            try {
+                int currentStateId = Block.BLOCK_STATE_REGISTRY.getId(blockOpt.getState());
+                int remappedStateId = RegistryRemapper.remapBlockState(currentStateId);
+                if (remappedStateId != currentStateId) {
+                    BlockState remappedState = Block.BLOCK_STATE_REGISTRY.byId(remappedStateId);
+                    if (remappedState != null) {
+                        @SuppressWarnings("unchecked")
+                        ParticleType<BlockParticleOption> typed = (ParticleType<BlockParticleOption>) blockOpt.getType();
+                        return new BlockParticleOption(typed, remappedState);
+                    }
+                }
+            } catch (RuntimeException e) {
+                LegacyLinkMod.LOGGER.warn(
+                        "[LegacyLink] Failed to remap block particle option; using original payload for legacy compatibility safety",
+                        e
+                );
+                return source;
+            }
+        }
+        if (source instanceof ItemParticleOption itemOpt) {
+            ItemStackTemplate remapped = ItemRewriter.remapTemplate(itemOpt.getItem());
+            if (remapped != itemOpt.getItem()) {
+                @SuppressWarnings("unchecked")
+                ParticleType<ItemParticleOption> typed = (ParticleType<ItemParticleOption>) itemOpt.getType();
+                return new ItemParticleOption(typed, remapped);
+            }
+        }
+        return source;
+    }
+
+    private ClientboundLevelParticlesPacket copyParticlePacket(ClientboundLevelParticlesPacket packet, ParticleOptions particle) {
+        return new ClientboundLevelParticlesPacket(
+                particle,
+                packet.isOverrideLimiter(),
+                packet.alwaysShow(),
+                packet.getX(),
+                packet.getY(),
+                packet.getZ(),
+                packet.getXDist(),
+                packet.getYDist(),
+                packet.getZDist(),
+                packet.getMaxSpeed(),
+                packet.getCount()
+        );
     }
 
     public ClientboundSetEntityDataPacket remapEntityData(ClientboundSetEntityDataPacket packet) {
