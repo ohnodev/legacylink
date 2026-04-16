@@ -23,6 +23,7 @@ import dev.ohno.legacylink.handler.rewrite.SlotDisplayUtils;
 import dev.ohno.legacylink.mapping.LegacyAttributeWireTable;
 import dev.ohno.legacylink.mapping.RegistryRemapper;
 import dev.ohno.legacylink.runtime.LegacyRuntimeContext;
+import dev.ohno.legacylink.status.LegacyStatusCacheManager;
 import dev.ohno.legacylink.telemetry.TranslationStats;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -65,7 +66,6 @@ import net.minecraft.network.protocol.game.ClientboundUpdateAttributesPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateAdvancementsPacket;
 import net.minecraft.network.protocol.game.ClientboundUpdateRecipesPacket;
 import net.minecraft.network.protocol.status.ClientboundStatusResponsePacket;
-import net.minecraft.network.protocol.status.ServerStatus;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
@@ -91,7 +91,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.lang.reflect.Constructor;
 import java.util.Set;
@@ -106,20 +105,8 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     private static final EntityType<?> LEGACY_SLIME_TYPE = resolveEntityType("minecraft:slime");
 
     private static final long STATUS_LOG_INTERVAL_NS = 10_000_000_000L; // 10 seconds
-    private static final long STATUS_CACHE_TTL_NS = 1_000_000_000L; // 1 second
     private static long statusInstallCount;
     private static long statusInstallWindowStart;
-    private static volatile StatusCache statusCache;
-
-    private static final class StatusCache {
-        private final ClientboundStatusResponsePacket response;
-        private final long builtAt;
-
-        private StatusCache(ClientboundStatusResponsePacket response, long builtAt) {
-            this.response = response;
-            this.builtAt = builtAt;
-        }
-    }
 
     private static final Map<String, SimpleParticleType> LEGACY_PARTICLE_FALLBACKS = Map.of(
             "minecraft:noxious_gas", ParticleTypes.SMOKE,
@@ -566,23 +553,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
     }
 
     private static ClientboundStatusResponsePacket remapStatusResponse(ClientboundStatusResponsePacket packet) {
-        long now = System.nanoTime();
-        StatusCache cached = statusCache;
-        if (cached != null && (now - cached.builtAt) < STATUS_CACHE_TTL_NS) {
-            return cached.response;
-        }
-        ServerStatus status = packet.status();
-        ServerStatus.Version forcedLegacyVersion = new ServerStatus.Version("26.1.2", LegacyLinkConstants.PROTOCOL_26_1_2);
-        ServerStatus remapped = new ServerStatus(
-                status.description(),
-                status.players(),
-                Optional.of(forcedLegacyVersion),
-                status.favicon(),
-                status.enforcesSecureChat()
-        );
-        ClientboundStatusResponsePacket built = new ClientboundStatusResponsePacket(remapped);
-        statusCache = new StatusCache(built, now);
-        return built;
+        return LegacyStatusCacheManager.getOrBuildForOutboundHandler(packet.status());
     }
 
     private ClientboundRegistryDataPacket filterRegistryData(ClientboundRegistryDataPacket packet) {
