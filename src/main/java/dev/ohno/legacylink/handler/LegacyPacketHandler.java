@@ -590,6 +590,7 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
             boolean stripSulfurCubeEntityType =
                     entityTypeRegistry && LegacyLinkConstants.SULFUR_CUBE_ENTITY_ID.contentEquals(entryId);
             boolean stripSulfurOrModEntry = !entityTypeRegistry
+                    && !particleRegistry
                     && (LegacyLinkConstants.SULFUR_BLOCK_IDS.contains(entryId)
                     || LegacyLinkConstants.SULFUR_ITEM_IDS.contains(entryId)
                     || entryId.equals(LegacyLinkConstants.SULFUR_CAVES_BIOME_ID)
@@ -661,15 +662,23 @@ public class LegacyPacketHandler extends ChannelDuplexHandler {
 
     private ParticleOptions remapParticleOptionsForLegacy(ParticleOptions source) {
         if (source instanceof BlockParticleOption blockOpt) {
-            int currentStateId = Block.BLOCK_STATE_REGISTRY.getId(blockOpt.getState());
-            int remappedStateId = RegistryRemapper.remapBlockState(currentStateId);
-            if (remappedStateId != currentStateId) {
-                BlockState remappedState = Block.BLOCK_STATE_REGISTRY.byId(remappedStateId);
-                if (remappedState != null) {
-                    @SuppressWarnings("unchecked")
-                    ParticleType<BlockParticleOption> typed = (ParticleType<BlockParticleOption>) blockOpt.getType();
-                    return new BlockParticleOption(typed, remappedState);
+            try {
+                int currentStateId = Block.BLOCK_STATE_REGISTRY.getId(blockOpt.getState());
+                int remappedStateId = RegistryRemapper.remapBlockState(currentStateId);
+                if (remappedStateId != currentStateId) {
+                    BlockState remappedState = Block.BLOCK_STATE_REGISTRY.byId(remappedStateId);
+                    if (remappedState != null) {
+                        @SuppressWarnings("unchecked")
+                        ParticleType<BlockParticleOption> typed = (ParticleType<BlockParticleOption>) blockOpt.getType();
+                        return new BlockParticleOption(typed, remappedState);
+                    }
                 }
+            } catch (RuntimeException e) {
+                LegacyLinkMod.LOGGER.warn(
+                        "[LegacyLink] Failed to remap block particle option; using original payload for legacy compatibility safety",
+                        e
+                );
+                return source;
             }
         }
         if (source instanceof ItemParticleOption itemOpt) {
